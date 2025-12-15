@@ -1,4 +1,4 @@
-/// The parser logic "back-inspired" by nom in Rust.
+/// The recursive descent parser logic "back-inspired" by nom in Rust.
 /// Most functions share the signature:
 ///
 ///   IResult parser(std::string_view);
@@ -14,15 +14,26 @@
 /// `(&str, T)` in Rust.
 
 #include <string_view>
+#include <unordered_map>
 #include <variant>
+
+using PortMaps = std::unordered_map<std::string, std::string>;
 
 struct Node {
 	std::string name;
+	PortMaps port_maps;
 	std::vector<Node> children;
 };
 
 std::ostream &operator<<(std::ostream& os, const Node& node) {
-	os << "Node { .name = \"" << node.name << "\",\n    .children = [";
+	os << "Node { .name = \"" << node.name << "\",\n";
+	os << ".port_maps = [\n";
+	for (auto& port_map : node.port_maps) {
+		os << port_map.first << " <- " << port_map.second << "\n";
+	}
+	os << "],\n";
+
+	os << ".children = [\n";
 	for (auto& child : node.children) {
 		os << child << "\n";
 	}
@@ -114,6 +125,70 @@ IResult<std::vector<Node>> tree_children_block(std::string_view i) {
 	return std::make_pair(r4.first, children);
 }
 
+IResult<std::pair<std::string, std::string>> port_map(std::string_view i) {
+	auto res = identifier(i);
+	if (auto e = std::get_if<1>(&res)) {
+		return *e;
+	}
+	auto pair = std::get<0>(res);
+	auto r = space(pair.first).first;
+
+	if (r.substr(0, 2) != "<-") {
+		return std::string("Expected \"<-\"");
+	}
+
+	auto res2 = identifier(r.substr(2));
+	if (auto e = std::get_if<1>(&res2)) {
+		return *e;
+	}
+	auto pair2 = std::get<0>(res2);
+	auto r2 = pair2.first;
+
+	return std::make_pair(r2,
+		std::make_pair(std::string(pair.second), std::string(pair2.second))); 
+}
+
+IResult<PortMaps> port_maps(std::string_view i) {
+	auto r = i;
+	PortMaps ret;
+	while (!r.empty()) {
+		auto res = port_map(r);
+		auto pair = std::get_if<0>(&res);
+		if (!pair) {
+			break;
+		}
+		ret.insert(pair->second);
+		r = pair->first;
+		auto res4 = match_char<','>(r);
+		if (auto e = std::get_if<1>(&res4)) {
+			break;
+		}
+		r = std::get<0>(res4).first;
+	}
+	return std::make_pair(r, ret);
+}
+
+IResult<PortMaps> port_maps_parens(std::string_view i) {
+	i = space(i).first;
+	auto res2 = match_char<'('>(i);
+	if (auto e = std::get_if<1>(&res2)) {
+		return *e;
+	}
+	auto res3 = port_maps(std::get<0>(res2).first);
+	if (auto e = std::get_if<1>(&res3)) {
+		return *e;
+	}
+	auto res4 = match_char<')'>(std::get<0>(res3).first);
+	if (auto e = std::get_if<1>(&res4)) {
+		return *e;
+	}
+	auto r4 = std::get<0>(res4);
+
+	auto port_maps = std::get<0>(res3).second;
+
+	return std::make_pair(r4.first, port_maps);
+}
+
 IResult<Node> parse_tree_node(std::string_view i) {
 	auto res = identifier(i);
 	if (auto e = std::get_if<1>(&res)) {
@@ -122,14 +197,22 @@ IResult<Node> parse_tree_node(std::string_view i) {
 	auto r = std::get<0>(res);
 
 	auto next = r.first;
-	auto res2 = tree_children_block(r.first);
+	PortMaps port_maps;
+	auto ports_res = port_maps_parens(next);
+	if (auto ports = std::get_if<0>(&ports_res)) {
+		next = ports->first;
+		port_maps = ports->second;
+	}
+
+	auto res2 = tree_children_block(next);
 	std::vector<Node> children;
 	if (auto r3 = std::get_if<0>(&res2)) {
-		children = r3->second;
 		next = r3->first;
+		children = r3->second;
 	}
 	return std::make_pair(next, Node {
 		.name = std::string(r.second),
+		.port_maps = port_maps,
 		.children = children,
 	});
 }

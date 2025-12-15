@@ -32,7 +32,9 @@ void test_identifier() {
 }
 
 void test_tree() {
-	std::string src = "tree main = Sequence {}";
+	std::string src = R"(tree main = Sequence {
+	Print
+	})";
 
 	auto res = source_text(src);
 

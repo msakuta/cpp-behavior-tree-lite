@@ -14,10 +14,21 @@
 /// `(&str, T)` in Rust.
 
 #include <string_view>
-#include <unordered_map>
 #include <variant>
 
-using PortMaps = std::unordered_map<std::string, std::string>;
+enum class PortType {
+	Input,
+	Output,
+	Inout,
+};
+
+struct PortMap {
+	PortType ty;
+	std::string node_port;
+	std::string blackboard_variable;
+};
+
+using PortMaps = std::vector<PortMap>;
 
 struct Node {
 	std::string name;
@@ -29,7 +40,19 @@ std::ostream &operator<<(std::ostream& os, const Node& node) {
 	os << "Node { .name = \"" << node.name << "\",\n";
 	os << ".port_maps = [\n";
 	for (auto& port_map : node.port_maps) {
-		os << port_map.first << " <- " << port_map.second << "\n";
+		os << port_map.node_port;
+		switch (port_map.ty) {
+			case PortType::Input:
+				os << " <- ";
+				break;
+			case PortType::Output:
+				os << " -> ";
+				break;
+			case PortType::Inout:
+				os << " <-> ";
+				break;
+		}
+		os << port_map.blackboard_variable << "\n";
 	}
 	os << "],\n";
 
@@ -125,7 +148,7 @@ IResult<std::vector<Node>> tree_children_block(std::string_view i) {
 	return std::make_pair(r4.first, children);
 }
 
-IResult<std::pair<std::string, std::string>> port_map(std::string_view i) {
+IResult<PortMap> port_map(std::string_view i) {
 	auto res = identifier(i);
 	if (auto e = std::get_if<1>(&res)) {
 		return *e;
@@ -133,19 +156,38 @@ IResult<std::pair<std::string, std::string>> port_map(std::string_view i) {
 	auto pair = std::get<0>(res);
 	auto r = space(pair.first).first;
 
-	if (r.substr(0, 2) != "<-") {
-		return std::string("Expected \"<-\"");
+	std::string_view next;
+	PortType ty;
+	if (r.substr(0, 2) == "<-") {
+		next = r.substr(2);
+		ty = PortType::Input;
+	}
+	else if (r.substr(0, 2) == "->") {
+		next = r.substr(2);
+		ty = PortType::Output;
+	}
+	else if (r.substr(0, 3) == "<->") {
+		next = r.substr(3);
+		ty = PortType::Inout;
+	}
+	else {
+		return std::string("Expected \"<-\", \"->\" or \"<->\"");
 	}
 
-	auto res2 = identifier(r.substr(2));
+	auto res2 = identifier(next);
 	if (auto e = std::get_if<1>(&res2)) {
 		return *e;
 	}
 	auto pair2 = std::get<0>(res2);
 	auto r2 = pair2.first;
 
-	return std::make_pair(r2,
-		std::make_pair(std::string(pair.second), std::string(pair2.second))); 
+	PortMap port_map {
+		.ty = ty,
+		.node_port = std::string(pair.second),
+		.blackboard_variable = std::string(pair2.second),
+	};
+
+	return std::make_pair(r2, port_map);
 }
 
 IResult<PortMaps> port_maps(std::string_view i) {
@@ -157,7 +199,7 @@ IResult<PortMaps> port_maps(std::string_view i) {
 		if (!pair) {
 			break;
 		}
-		ret.insert(pair->second);
+		ret.push_back(pair->second);
 		r = pair->first;
 		auto res4 = match_char<','>(r);
 		if (auto e = std::get_if<1>(&res4)) {

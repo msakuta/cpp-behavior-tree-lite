@@ -34,6 +34,7 @@ void test_identifier() {
 void test_tree() {
 	std::string src = R"(tree main = Sequence {
 	Print (input <- hey)
+	GetValue (output -> bbValue)
 	})";
 
 	auto res = source_text(src);

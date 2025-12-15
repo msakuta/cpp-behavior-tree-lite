@@ -13,12 +13,12 @@ IResult identifier(std::string_view i) {
 		i = i.substr(1);
 	}
 
-	if (!isalpha(i[0])) {
+	if (i.empty() || (!isalpha(i[0]) && i[0] != '_')) {
 		return std::string("Undefined");
 	}
 
 	auto r = i;
-	while (!r.empty() && isalnum(r[0])) {
+	while (!r.empty() && (isalnum(r[0]) || r[0] == '_')) {
 		r = r.substr(1);
 	}
 	IResult ret = std::make_pair(r, i.substr(0, r.data() - i.data()));

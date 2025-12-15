@@ -4,7 +4,7 @@
 #include "parser.h"
 
 int main() {
-	std::string src = "Hello world lorem ipsum\n";
+	std::string src = "Hello world lorem ipsum some_thing\n";
 
 	std::vector<std::string_view> tokens;
 

@@ -24,6 +24,8 @@ enum class PortType {
 
 struct PortMap {
     PortType ty;
+    /// Whether blackboard_variable is a literal instead of a variable name
+    bool blackboard_literal;
     std::string node_port;
     std::string blackboard_variable;
 };
@@ -50,8 +52,6 @@ std::ostream &operator<<(std::ostream& os, indent_t) {
     return os;
 }
 
-// hello
-
 std::ostream &operator<<(std::ostream& os, const Node& node) {
     os << indent << "Node {\n";
     indent_level++;
@@ -71,7 +71,12 @@ std::ostream &operator<<(std::ostream& os, const Node& node) {
                 os << " <-> ";
                 break;
         }
-        os << port_map.blackboard_variable << "\n";
+        if (port_map.blackboard_literal) {
+            os << '"' << port_map.blackboard_variable << "\"\n";
+        }
+        else {
+            os << port_map.blackboard_variable << "\n";
+        }
     }
     indent_level--;
     os << indent << "],\n";
@@ -125,7 +130,7 @@ void print_res(const Res<std::string_view>& res) {
 template<char C>
 IResult<std::string_view> match_char(std::string_view i) {
     i = space(i).first;
-    
+
     if (i.empty() || i[0] != C) {
         char str[] = {C, '\0'};
         return std::string("Expected token '") + str + "'";
@@ -133,6 +138,19 @@ IResult<std::string_view> match_char(std::string_view i) {
 
     return std::make_pair(i.substr(1), i.substr(0, 1));
 }
+
+template<char C>
+IResult<std::string_view> unmatch_char(std::string_view i) {
+    i = space(i).first;
+
+    if (!i.empty() && i[0] == C) {
+        char str[] = {C, '\0'};
+        return std::string("Expected token '") + str + "'";
+    }
+
+    return std::make_pair(i.substr(1), i.substr(0, 1));
+}
+
 
 IResult<Node> parse_tree_node(std::string_view i);
 
@@ -172,6 +190,25 @@ IResult<std::vector<Node>> tree_children_block(std::string_view i) {
     return std::make_pair(r4.first, children);
 }
 
+IResult<std::string_view> string_literal(std::string_view i) {
+    i = space(i).first;
+    auto res2 = match_char<'"'>(i);
+    if (auto e = std::get_if<1>(&res2)) {
+        return *e;
+    }
+
+    auto r = i.substr(1);
+    while (!r.empty()) {
+        auto res2 = unmatch_char<'"'>(r);
+        if (auto e = std::get_if<1>(&res2)) {
+            break;
+        }
+        r = std::get<0>(res2).first;
+    }
+
+    return std::make_pair(r.substr(1), i.substr(1, r.data() - i.data() - 1));
+}
+
 IResult<PortMap> port_map(std::string_view i) {
     auto res = identifier(i);
     if (auto e = std::get_if<1>(&res)) {
@@ -198,20 +235,32 @@ IResult<PortMap> port_map(std::string_view i) {
         return std::string("Expected \"<-\", \"->\" or \"<->\"");
     }
 
-    auto res2 = identifier(next);
-    if (auto e = std::get_if<1>(&res2)) {
-        return *e;
+    bool blackboard_literal = false;
+    std::string blackboard_variable;
+    auto res2 = string_literal(next);
+    if (auto pair2 = std::get_if<0>(&res2)) {
+        next = pair2->first;
+        blackboard_literal = true;
+        blackboard_variable = std::string(pair2->second);
     }
-    auto pair2 = std::get<0>(res2);
-    auto r2 = pair2.first;
+    else {
+        auto res2 = identifier(next);
+        if (auto e = std::get_if<1>(&res2)) {
+            return *e;
+        }
+        auto pair3 = std::get<0>(res2);
+        next = pair3.first;
+        blackboard_variable = std::string(pair3.second);
+    }
 
     PortMap port_map {
         .ty = ty,
+        .blackboard_literal = blackboard_literal,
         .node_port = std::string(pair.second),
-        .blackboard_variable = std::string(pair2.second),
+        .blackboard_variable = blackboard_variable,
     };
 
-    return std::make_pair(r2, port_map);
+    return std::make_pair(next, port_map);
 }
 
 IResult<PortMaps> port_maps(std::string_view i) {

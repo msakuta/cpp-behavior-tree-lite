@@ -33,7 +33,7 @@ void test_identifier() {
 
 void test_tree() {
     std::string src = R"(tree main = Sequence {
-    Print (input <- hey)
+    Print (input <- "hey")
     GetValue (output -> bbValue)
     })";
 
@@ -48,8 +48,21 @@ void test_tree() {
     std::cout << "Tree parsed: " << pair.second << ", remainder: \"" << pair.first << "\"\n";
 }
 
+void test_string_literal() {
+    std::string src = R"(  "hey"   )";
+    auto res = string_literal(src);
+
+    if (auto e = std::get_if<1>(&res)) {
+        std::cout << "Error: " << *e << "\n";
+    }
+
+    auto pair = std::get<0>(res);
+    std::cout << "String literal: " << pair.second << ", remainder: \"" << pair.first << "\n";
+}
+
 int main() {
     test_tree();
+    //test_string_literal();
     return 0;
 }
 

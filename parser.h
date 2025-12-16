@@ -36,11 +36,28 @@ struct Node {
 	std::vector<Node> children;
 };
 
+thread_local size_t indent_level = 1;
+
+/// A dummy type to introduce indentation to ostream.
+/// The nesting level is counted in thread local indent_level, which is not
+/// exception safe.
+struct indent_t{} indent;
+
+std::ostream &operator<<(std::ostream& os, indent_t) {
+	for (size_t i = 0; i < indent_level; i++) {
+		os << "  ";
+	}
+	return os;
+}
+
 std::ostream &operator<<(std::ostream& os, const Node& node) {
-	os << "Node { .name = \"" << node.name << "\",\n";
-	os << ".port_maps = [\n";
+	os << indent << "Node {\n";
+	indent_level++;
+	os << indent << ".name = \"" << node.name << "\",\n";
+	os << indent << ".port_maps = [\n";
+	indent_level++;
 	for (auto& port_map : node.port_maps) {
-		os << port_map.node_port;
+		os << indent << port_map.node_port;
 		switch (port_map.ty) {
 			case PortType::Input:
 				os << " <- ";
@@ -54,13 +71,18 @@ std::ostream &operator<<(std::ostream& os, const Node& node) {
 		}
 		os << port_map.blackboard_variable << "\n";
 	}
-	os << "],\n";
+	indent_level--;
+	os << indent << "],\n";
 
-	os << ".children = [\n";
+	os << indent << ".children = [\n";
+	indent_level++;
 	for (auto& child : node.children) {
-		os << child << "\n";
+		os << child;
 	}
-	os << "]}";
+	indent_level--;
+	os << indent << "]\n";
+	indent_level--;
+	os << indent << "}\n";
 	return os;
 }
 
@@ -265,7 +287,9 @@ struct Tree {
 };
 
 inline std::ostream &operator<<(std::ostream& os, const Tree& tree) {
-	os << "Tree { .name = \"" << tree.name << "\", .node = " << tree.node << " }";
+	os << "Tree {\n";
+	os << "  .name = \"" << tree.name << "\",\n";
+	os << "  .node = " << tree.node << " }\n";
 	return os;
 }
 

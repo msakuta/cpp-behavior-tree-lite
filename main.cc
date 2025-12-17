@@ -31,6 +31,23 @@ void test_identifier() {
     }
 }
 
+class PrintNode : public BehaviorNode {
+    BehaviorResult tick(Context& context) override {
+        std::cout << "Print()\n";
+
+        return BehaviorResult::Success;
+    }
+};
+
+class GetValueNode : public BehaviorNode {
+    BehaviorResult tick(Context& context) override {
+        std::cout << "GetValue()\n";
+
+        return BehaviorResult::Success;
+    }
+};
+
+
 void test_tree() {
     std::string src = R"(tree main = Sequence {
     Print (input <- "hey")
@@ -47,7 +64,14 @@ void test_tree() {
     auto pair = std::get<0>(res);
     std::cout << "Tree parsed: " << pair.second << ", remainder: \"" << pair.first << "\"\n";
 
-    auto tree = load(pair.second);
+    auto registry = defaultRegistry();
+    registry.node_types.emplace(std::string("Print"),
+        std::function([](){ return static_cast<std::unique_ptr<BehaviorNode>>(
+            std::make_unique<PrintNode>()); }));
+    registry.node_types.emplace(std::string("GetValue"),
+        std::function([](){ return static_cast<std::unique_ptr<BehaviorNode>>(
+            std::make_unique<GetValueNode>()); }));
+    auto tree = load(pair.second, registry);
 
     std::cout << "Tree instantiated: " << !!tree << "\n";
     if (tree) {

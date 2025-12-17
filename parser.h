@@ -17,6 +17,8 @@
 #include <variant>
 #include <optional>
 #include <memory>
+#include <unordered_map>
+#include <functional>
 #include <algorithm>
 
 enum class PortType {
@@ -429,6 +431,11 @@ public:
     virtual BehaviorResult tick(Context& context) = 0;
 };
 
+struct Registry {
+    std::unordered_map<std::string, std::function<std::unique_ptr<BehaviorNode> ()>> node_types;
+    std::unordered_map<std::string, std::string> key_names;
+};
+
 struct BehaviorNodeContainer {
     /// Name of the type of the node
     std::string name;
@@ -461,19 +468,31 @@ class SequenceNode : public BehaviorNode {
     }
 };
 
+Registry defaultRegistry() {
+    Registry registry;
+
+    registry.node_types.emplace(std::string("Sequence"),
+        std::function([](){ return static_cast<std::unique_ptr<BehaviorNode>>(
+            std::make_unique<SequenceNode>()); }));
+
+    return registry;
+}
+
 BehaviorNodeContainer load_recurse(
     const TreeDef& parent,
-    const TreeSource& tree_source
+    const TreeSource& tree_source,
+    const Registry& registry
 ) {
     std::vector<BehaviorNodeContainer> child_nodes;
     std::transform(parent.children.begin(), parent.children.end(), std::back_inserter(child_nodes),
-        [&tree_source](auto& child){
-            return load_recurse(child, tree_source);
+        [&tree_source, &registry](auto& child){
+            return load_recurse(child, tree_source, registry);
         });
 
     std::unique_ptr<BehaviorNode> node;
-    if (parent.name == "Sequence") {
-        node = std::make_unique<SequenceNode>();
+    auto node_it = registry.node_types.find(parent.name);
+    if (node_it != registry.node_types.end()) {
+        node = node_it->second();
     }
 
     return BehaviorNodeContainer {
@@ -489,7 +508,8 @@ BehaviorNodeContainer load_recurse(
 /// It is useful to catch errors in a behavior tree source file, but you need to
 /// implement [`crate::BehaviorNode::provided_ports`] to use it.
 std::optional<BehaviorNodeContainer> load(
-    TreeSource& tree_source
+    TreeSource& tree_source,
+    const Registry& registry
 ) {
     auto main_it = std::find_if(tree_source.begin(), tree_source.end(), [](auto& tree) {
         return tree.name == "main";
@@ -499,7 +519,7 @@ std::optional<BehaviorNodeContainer> load(
         return std::nullopt;
     }
 
-    auto tree_con = load_recurse(main_it->node, tree_source);
+    auto tree_con = load_recurse(main_it->node, tree_source, registry);
 
     return tree_con;
 }

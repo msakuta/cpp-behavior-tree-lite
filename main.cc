@@ -56,6 +56,8 @@ void test_tree() {
         for (auto& child : tree->child_nodes) {
             std::cout << "    " << child.name << "\n";
         }
+
+        tick_node(*tree);
     }
 }
 

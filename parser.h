@@ -16,6 +16,7 @@
 #include <string_view>
 #include <variant>
 #include <optional>
+#include <memory>
 #include <algorithm>
 
 enum class PortType {
@@ -414,10 +415,50 @@ IResult<TreeSource> source_text(std::string_view i) {
     return std::make_pair(i, ret);
 }
 
+enum class BehaviorResult {
+    Success,
+    Fail,
+    /// The node should keep running in the next tick
+    Running,
+};
+
+struct Context;
+
+class BehaviorNode {
+public:
+    virtual BehaviorResult tick(Context& context) = 0;
+};
+
 struct BehaviorNodeContainer {
     /// Name of the type of the node
     std::string name;
+    std::unique_ptr<BehaviorNode> node;
     std::vector<BehaviorNodeContainer> child_nodes;
+};
+
+struct Context {
+//    Blackboard blackboard;
+//    BBMap blackboard_map;
+    std::vector<BehaviorNodeContainer>* child_nodes;
+//    bool strict;
+};
+
+class SequenceNode : public BehaviorNode {
+    BehaviorResult tick(Context& context) override {
+        std::cout << "SequenceNode ticked!!\n";
+
+        std::vector<BehaviorNodeContainer>* prev_child_nodes = context.child_nodes;
+        std::cout << "prev_child_nodes: " << (prev_child_nodes->size()) << "\n";
+        for (auto& node : *prev_child_nodes) {
+            context.child_nodes = &node.child_nodes;
+            if (node.node) {
+                node.node->tick(context);
+            }
+        }
+        context.child_nodes = prev_child_nodes;
+
+        return BehaviorResult::Success;
+    }
 };
 
 BehaviorNodeContainer load_recurse(
@@ -430,9 +471,15 @@ BehaviorNodeContainer load_recurse(
             return load_recurse(child, tree_source);
         });
 
+    std::unique_ptr<BehaviorNode> node;
+    if (parent.name == "Sequence") {
+        node = std::make_unique<SequenceNode>();
+    }
+
     return BehaviorNodeContainer {
         .name = parent.name,
-        .child_nodes = child_nodes,
+        .node = std::move(node),
+        .child_nodes = std::move(child_nodes),
     };
 }
 
@@ -455,5 +502,13 @@ std::optional<BehaviorNodeContainer> load(
     auto tree_con = load_recurse(main_it->node, tree_source);
 
     return tree_con;
+}
+
+void tick_node(BehaviorNodeContainer& node) {
+    Context context {
+        .child_nodes = &node.child_nodes,
+    };
+
+    node.node->tick(context);
 }
 

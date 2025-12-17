@@ -47,13 +47,7 @@ class GetValueNode : public BehaviorNode {
     }
 };
 
-
-void test_tree() {
-    std::string src = R"(tree main = Sequence {
-    Print (input <- "hey")
-    GetValue (output -> bbValue)
-    })";
-
+void build_and_run(std::string_view src) {
     auto res = source_text(src);
 
     if (auto e = std::get_if<1>(&res)) {
@@ -85,6 +79,25 @@ void test_tree() {
     }
 }
 
+
+void test_tree() {
+    std::string src = R"(tree main = Sequence {
+    Print (input <- "hey")
+    GetValue (output -> bbValue)
+    })";
+
+    build_and_run(src);
+}
+
+void test_fallback_tree() {
+    std::string src = R"(tree main = Fallback {
+    Print (input <- "hey")
+    GetValue (output -> bbValue)
+    })";
+
+    build_and_run(src);
+}
+
 void test_string_literal() {
     std::string src = R"(  "hey"   )";
     auto res = string_literal(src);
@@ -98,7 +111,8 @@ void test_string_literal() {
 }
 
 int main() {
-    test_tree();
+    //test_tree();
+    test_fallback_tree();
     //test_string_literal();
     return 0;
 }

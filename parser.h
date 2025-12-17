@@ -459,7 +459,39 @@ class SequenceNode : public BehaviorNode {
         for (auto& node : *prev_child_nodes) {
             context.child_nodes = &node.child_nodes;
             if (node.node) {
-                node.node->tick(context);
+                auto result = node.node->tick(context);
+                bool break_out = false;
+                switch (result) {
+                    case BehaviorResult::Success: break;
+                    case BehaviorResult::Fail: break_out = true; break;
+                    case BehaviorResult::Running: break_out = true; break;
+                }
+                if (break_out) break;
+            }
+        }
+        context.child_nodes = prev_child_nodes;
+
+        return BehaviorResult::Success;
+    }
+};
+
+class FallbackNode : public BehaviorNode {
+    BehaviorResult tick(Context& context) override {
+        std::cout << "FallbackNode ticked!!\n";
+
+        std::vector<BehaviorNodeContainer>* prev_child_nodes = context.child_nodes;
+        std::cout << "prev_child_nodes: " << (prev_child_nodes->size()) << "\n";
+        for (auto& node : *prev_child_nodes) {
+            context.child_nodes = &node.child_nodes;
+            if (node.node) {
+                auto result = node.node->tick(context);
+                bool break_out = false;
+                switch (result) {
+                    case BehaviorResult::Success: break_out = true; break;
+                    case BehaviorResult::Fail: break;
+                    case BehaviorResult::Running: break_out = true; break;
+                }
+                if (break_out) break;
             }
         }
         context.child_nodes = prev_child_nodes;
@@ -474,6 +506,9 @@ Registry defaultRegistry() {
     registry.node_types.emplace(std::string("Sequence"),
         std::function([](){ return static_cast<std::unique_ptr<BehaviorNode>>(
             std::make_unique<SequenceNode>()); }));
+    registry.node_types.emplace(std::string("Fallback"),
+        std::function([](){ return static_cast<std::unique_ptr<BehaviorNode>>(
+            std::make_unique<FallbackNode>()); }));
 
     return registry;
 }

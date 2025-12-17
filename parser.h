@@ -446,6 +446,19 @@ struct Context {
     BBMap *blackboard_map;
     std::vector<BehaviorNodeContainer>* child_nodes;
 //    bool strict;
+
+    std::optional<std::string> get(const std::string port_name) const {
+        auto var_it = blackboard_map->find(port_name);
+        if (var_it != blackboard_map->end()) {
+            if (auto x = std::get_if<0>(&var_it->second)) {
+                return x->first;
+            }
+            if (auto x = std::get_if<1>(&var_it->second)) {
+                return *x;
+            }
+        }
+        return std::nullopt;
+    }
 };
 
 struct BehaviorNodeContainer {

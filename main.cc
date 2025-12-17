@@ -33,14 +33,9 @@ void test_identifier() {
 
 class PrintNode : public BehaviorNode {
     BehaviorResult tick(Context& context) override {
-        auto var_it = context.blackboard_map->find("input");
-        if (var_it != context.blackboard_map->end()) {
-            if (auto x = std::get_if<0>(&var_it->second)) {
-                std::cout << "Print(" << x->first << ")\n";
-            }
-            if (auto x = std::get_if<1>(&var_it->second)) {
-                std::cout << "Print(" << x << ")\n";
-            }
+        auto var_it = context.get("input");
+        if (var_it) {
+            std::cout << "Print(\"" << *var_it << "\")\n";
         }
         else {
             std::cout << "Print could not find input port\n";
@@ -123,8 +118,8 @@ void test_string_literal() {
 }
 
 int main() {
-    //test_tree();
-    test_fallback_tree();
+    test_tree();
+    //test_fallback_tree();
     //test_string_literal();
     return 0;
 }

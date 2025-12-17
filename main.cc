@@ -46,6 +46,17 @@ void test_tree() {
 
     auto pair = std::get<0>(res);
     std::cout << "Tree parsed: " << pair.second << ", remainder: \"" << pair.first << "\"\n";
+
+    auto tree = load(pair.second);
+
+    std::cout << "Tree instantiated: " << !!tree << "\n";
+    if (tree) {
+        std::cout << "  Name: " << tree->name << "\n";
+        std::cout << "  Children: " << tree->child_nodes.size() << "\n";
+        for (auto& child : tree->child_nodes) {
+            std::cout << "    " << child.name << "\n";
+        }
+    }
 }
 
 void test_string_literal() {

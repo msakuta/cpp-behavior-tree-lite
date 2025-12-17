@@ -15,6 +15,8 @@
 
 #include <string_view>
 #include <variant>
+#include <optional>
+#include <algorithm>
 
 enum class PortType {
     Input,
@@ -32,10 +34,10 @@ struct PortMap {
 
 using PortMaps = std::vector<PortMap>;
 
-struct Node {
+struct TreeDef {
     std::string name;
     PortMaps port_maps;
-    std::vector<Node> children;
+    std::vector<TreeDef> children;
 };
 
 thread_local size_t indent_level = 1;
@@ -52,7 +54,7 @@ std::ostream &operator<<(std::ostream& os, indent_t) {
     return os;
 }
 
-std::ostream &operator<<(std::ostream& os, const Node& node) {
+std::ostream &operator<<(std::ostream& os, const TreeDef& node) {
     os << indent << "Node {\n";
     indent_level++;
     os << indent << ".name = \"" << node.name << "\",\n";
@@ -152,11 +154,11 @@ IResult<std::string_view> unmatch_char(std::string_view i) {
 }
 
 
-IResult<Node> parse_tree_node(std::string_view i);
+IResult<TreeDef> parse_tree_node(std::string_view i);
 
-IResult<std::vector<Node>> tree_children(std::string_view i) {
+IResult<std::vector<TreeDef>> tree_children(std::string_view i) {
     auto r = i;
-    std::vector<Node> ret;
+    std::vector<TreeDef> ret;
     while (!r.empty()) {
         auto res = parse_tree_node(r);
         auto pair = std::get_if<0>(&res);
@@ -169,7 +171,7 @@ IResult<std::vector<Node>> tree_children(std::string_view i) {
     return std::make_pair(r, ret);
 }
 
-IResult<std::vector<Node>> tree_children_block(std::string_view i) {
+IResult<std::vector<TreeDef>> tree_children_block(std::string_view i) {
     i = space(i).first;
     auto res2 = match_char<'{'>(i);
     if (auto e = std::get_if<1>(&res2)) {
@@ -304,7 +306,7 @@ IResult<PortMaps> port_maps_parens(std::string_view i) {
     return std::make_pair(r4.first, port_maps);
 }
 
-IResult<Node> parse_tree_node(std::string_view i) {
+IResult<TreeDef> parse_tree_node(std::string_view i) {
     auto res = identifier(i);
     if (auto e = std::get_if<1>(&res)) {
         return std::string("Expected node name: " + *e);
@@ -320,12 +322,12 @@ IResult<Node> parse_tree_node(std::string_view i) {
     }
 
     auto res2 = tree_children_block(next);
-    std::vector<Node> children;
+    std::vector<TreeDef> children;
     if (auto r3 = std::get_if<0>(&res2)) {
         next = r3->first;
         children = r3->second;
     }
-    return std::make_pair(next, Node {
+    return std::make_pair(next, TreeDef {
         .name = std::string(r.second),
         .port_maps = port_maps,
         .children = children,
@@ -334,17 +336,31 @@ IResult<Node> parse_tree_node(std::string_view i) {
 
 struct Tree {
     std::string name;
-    Node node;
+    TreeDef node;
 };
 
 inline std::ostream &operator<<(std::ostream& os, const Tree& tree) {
-    os << "Tree {\n";
-    os << "  .name = \"" << tree.name << "\",\n";
-    os << "  .node = " << tree.node << " }\n";
+    os << indent << "Tree {\n";
+    indent_level++;
+    os << indent << ".name = \"" << tree.name << "\",\n";
+    os << indent << ".node = \n" << tree.node;
+    indent_level--;
+    os << indent << "}\n";
     return os;
 }
 
-IResult<Tree> source_text(std::string_view i) {
+inline std::ostream &operator<<(std::ostream& os, const std::vector<Tree>& trees) {
+    os << indent << "[\n";
+    indent_level++;
+    for (auto& tree : trees) {
+        os << tree;
+    }
+    indent_level--;
+    os << indent << "]\n";
+    return os;
+}
+
+IResult<Tree> parse_tree(std::string_view i) {
     auto res = identifier(i);
     if (auto e = std::get_if<1>(&res)) {
         return std::string("Did not recognize the first identifier: " + *e);
@@ -370,7 +386,7 @@ IResult<Tree> source_text(std::string_view i) {
 
     auto res5 = parse_tree_node(r4);
     if (auto e = std::get_if<1>(&res5)) {
-        return std::string("Node parse error: " + *e);
+        return std::string("TreeDef parse error: " + *e);
     }
     auto r5 = std::get<0>(res5);
 
@@ -378,5 +394,66 @@ IResult<Tree> source_text(std::string_view i) {
         .name = std::string(r2.second),
         .node = r5.second
     });
+}
+
+using TreeSource = std::vector<Tree>;
+
+IResult<TreeSource> source_text(std::string_view i) {
+    std::vector<Tree> ret;
+
+    while (!i.empty()) {
+        auto res = parse_tree(i);
+        if (auto e = std::get_if<1>(&res)) {
+            return *e;
+        }
+        auto pair = std::get<0>(res);
+        ret.push_back(pair.second);
+        i = pair.first;
+    }
+
+    return std::make_pair(i, ret);
+}
+
+struct BehaviorNodeContainer {
+    /// Name of the type of the node
+    std::string name;
+    std::vector<BehaviorNodeContainer> child_nodes;
+};
+
+BehaviorNodeContainer load_recurse(
+    const TreeDef& parent,
+    const TreeSource& tree_source
+) {
+    std::vector<BehaviorNodeContainer> child_nodes;
+    std::transform(parent.children.begin(), parent.children.end(), std::back_inserter(child_nodes),
+        [&tree_source](auto& child){
+            return load_recurse(child, tree_source);
+        });
+
+    return BehaviorNodeContainer {
+        .name = parent.name,
+        .child_nodes = child_nodes,
+    };
+}
+
+/// Instantiate a behavior tree from a AST of a tree.
+///
+/// `check_ports` enables static checking of port availability before actually ticking.
+/// It is useful to catch errors in a behavior tree source file, but you need to
+/// implement [`crate::BehaviorNode::provided_ports`] to use it.
+std::optional<BehaviorNodeContainer> load(
+    TreeSource& tree_source
+) {
+    auto main_it = std::find_if(tree_source.begin(), tree_source.end(), [](auto& tree) {
+        return tree.name == "main";
+    });
+
+    if (main_it == tree_source.end()) {
+        return std::nullopt;
+    }
+
+    auto tree_con = load_recurse(main_it->node, tree_source);
+
+    return tree_con;
 }
 

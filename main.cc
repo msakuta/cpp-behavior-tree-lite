@@ -33,7 +33,18 @@ void test_identifier() {
 
 class PrintNode : public BehaviorNode {
     BehaviorResult tick(Context& context) override {
-        std::cout << "Print()\n";
+        auto var_it = context.blackboard_map->find("input");
+        if (var_it != context.blackboard_map->end()) {
+            if (auto x = std::get_if<0>(&var_it->second)) {
+                std::cout << "Print(" << x->first << ")\n";
+            }
+            if (auto x = std::get_if<1>(&var_it->second)) {
+                std::cout << "Print(" << x << ")\n";
+            }
+        }
+        else {
+            std::cout << "Print could not find input port\n";
+        }
 
         return BehaviorResult::Success;
     }
@@ -70,8 +81,9 @@ void build_and_run(std::string_view src) {
     std::cout << "Tree instantiated: " << !!tree << "\n";
     if (tree) {
         std::cout << "  Name: " << tree->name << "\n";
-        std::cout << "  Children: " << tree->child_nodes.size() << "\n";
-        for (auto& child : tree->child_nodes) {
+        auto& child_nodes = tree->get_child_nodes();
+        std::cout << "  Children: " << child_nodes.size() << "\n";
+        for (auto& child : child_nodes) {
             std::cout << "    " << child.name << "\n";
         }
 

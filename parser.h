@@ -27,12 +27,14 @@ enum class PortType {
     Inout,
 };
 
+using BlackboardValue = std::variant<std::pair<std::string, PortType>, std::string>;
+
 struct PortMap {
     PortType ty;
     /// Whether blackboard_variable is a literal instead of a variable name
     bool blackboard_literal;
     std::string node_port;
-    std::string blackboard_variable;
+    BlackboardValue blackboard_value;
 };
 
 using PortMaps = std::vector<PortMap>;
@@ -76,11 +78,11 @@ std::ostream &operator<<(std::ostream& os, const TreeDef& node) {
                 os << " <-> ";
                 break;
         }
-        if (port_map.blackboard_literal) {
-            os << '"' << port_map.blackboard_variable << "\"\n";
+        if (auto literal = std::get_if<1>(&port_map.blackboard_value)) {
+            os << '"' << *literal << "\"\n";
         }
-        else {
-            os << port_map.blackboard_variable << "\n";
+        else if (auto port = std::get_if<0>(&port_map.blackboard_value)) {
+            os << port->first << "\n";
         }
     }
     indent_level--;
@@ -241,12 +243,12 @@ IResult<PortMap> port_map(std::string_view i) {
     }
 
     bool blackboard_literal = false;
-    std::string blackboard_variable;
+    BlackboardValue blackboard_value;
     auto res2 = string_literal(next);
     if (auto pair2 = std::get_if<0>(&res2)) {
         next = pair2->first;
         blackboard_literal = true;
-        blackboard_variable = std::string(pair2->second);
+        blackboard_value = std::string(pair2->second);
     }
     else {
         auto res2 = identifier(next);
@@ -255,14 +257,14 @@ IResult<PortMap> port_map(std::string_view i) {
         }
         auto pair3 = std::get<0>(res2);
         next = pair3.first;
-        blackboard_variable = std::string(pair3.second);
+        blackboard_value = std::make_pair(std::string(pair3.second), ty);
     }
 
     PortMap port_map {
         .ty = ty,
         .blackboard_literal = blackboard_literal,
         .node_port = std::string(pair.second),
-        .blackboard_variable = blackboard_variable,
+        .blackboard_value = blackboard_value,
     };
 
     return std::make_pair(next, port_map);
@@ -332,8 +334,8 @@ IResult<TreeDef> parse_tree_node(std::string_view i) {
     }
     return std::make_pair(next, TreeDef {
         .name = std::string(r.second),
-        .port_maps = port_maps,
-        .children = children,
+        .port_maps = std::move(port_maps),
+        .children = std::move(children),
     });
 }
 
@@ -424,7 +426,10 @@ enum class BehaviorResult {
     Running,
 };
 
+using BBMap = std::unordered_map<std::string, BlackboardValue>;
+
 struct Context;
+struct BehaviorNodeContainer;
 
 class BehaviorNode {
 public:
@@ -436,40 +441,66 @@ struct Registry {
     std::unordered_map<std::string, std::string> key_names;
 };
 
+struct Context {
+//    Blackboard blackboard;
+    BBMap *blackboard_map;
+    std::vector<BehaviorNodeContainer>* child_nodes;
+//    bool strict;
+};
+
 struct BehaviorNodeContainer {
     /// Name of the type of the node
     std::string name;
+protected:
     std::unique_ptr<BehaviorNode> node;
+    BBMap blackboard_map;
     std::vector<BehaviorNodeContainer> child_nodes;
-};
 
-struct Context {
-//    Blackboard blackboard;
-//    BBMap blackboard_map;
-    std::vector<BehaviorNodeContainer>* child_nodes;
-//    bool strict;
+public:
+    BehaviorNodeContainer(
+        std::string name,
+        std::unique_ptr<BehaviorNode> node,
+        BBMap bbmap,
+        std::vector<BehaviorNodeContainer> child_nodes
+    ) : name(name),
+        node(std::move(node)),
+        blackboard_map(std::move(bbmap)),
+        child_nodes(std::move(child_nodes)) { }
+
+    BehaviorResult tick(Context& context) {
+        if (this->node) {
+            auto prev_child_node = context.child_nodes;
+            context.child_nodes = &this->child_nodes;
+            auto prev_blackboard_map = context.blackboard_map;
+            context.blackboard_map = &this->blackboard_map;
+            auto res = this->node->tick(context);
+            context.child_nodes = prev_child_node;
+            context.blackboard_map = prev_blackboard_map;
+            return res;
+        }
+        return BehaviorResult::Success;
+    }
+
+    const std::vector<BehaviorNodeContainer>& get_child_nodes() const {
+        return child_nodes;
+    }
 };
 
 class SequenceNode : public BehaviorNode {
     BehaviorResult tick(Context& context) override {
         std::cout << "SequenceNode ticked!!\n";
 
-        std::vector<BehaviorNodeContainer>* prev_child_nodes = context.child_nodes;
-        std::cout << "prev_child_nodes: " << (prev_child_nodes->size()) << "\n";
-        for (auto& node : *prev_child_nodes) {
-            context.child_nodes = &node.child_nodes;
-            if (node.node) {
-                auto result = node.node->tick(context);
-                bool break_out = false;
-                switch (result) {
-                    case BehaviorResult::Success: break;
-                    case BehaviorResult::Fail: break_out = true; break;
-                    case BehaviorResult::Running: break_out = true; break;
-                }
-                if (break_out) break;
+        std::cout << "prev_child_nodes: " << context.child_nodes->size() << "\n";
+        for (auto& node : *context.child_nodes) {
+            auto result = node.tick(context);
+            bool break_out = false;
+            switch (result) {
+                case BehaviorResult::Success: break;
+                case BehaviorResult::Fail: break_out = true; break;
+                case BehaviorResult::Running: break_out = true; break;
             }
+            if (break_out) break;
         }
-        context.child_nodes = prev_child_nodes;
 
         return BehaviorResult::Success;
     }
@@ -482,17 +513,14 @@ class FallbackNode : public BehaviorNode {
         std::vector<BehaviorNodeContainer>* prev_child_nodes = context.child_nodes;
         std::cout << "prev_child_nodes: " << (prev_child_nodes->size()) << "\n";
         for (auto& node : *prev_child_nodes) {
-            context.child_nodes = &node.child_nodes;
-            if (node.node) {
-                auto result = node.node->tick(context);
-                bool break_out = false;
-                switch (result) {
-                    case BehaviorResult::Success: break_out = true; break;
-                    case BehaviorResult::Fail: break;
-                    case BehaviorResult::Running: break_out = true; break;
-                }
-                if (break_out) break;
+            auto result = node.tick(context);
+            bool break_out = false;
+            switch (result) {
+                case BehaviorResult::Success: break_out = true; break;
+                case BehaviorResult::Fail: break;
+                case BehaviorResult::Running: break_out = true; break;
             }
+            if (break_out) break;
         }
         context.child_nodes = prev_child_nodes;
 
@@ -530,11 +558,18 @@ BehaviorNodeContainer load_recurse(
         node = node_it->second();
     }
 
-    return BehaviorNodeContainer {
-        .name = parent.name,
-        .node = std::move(node),
-        .child_nodes = std::move(child_nodes),
-    };
+    BBMap bbmap;
+    for (auto& port_map : parent.port_maps) {
+        std::cout << "port_map " << port_map.node_port << " literal: " << port_map.blackboard_literal << "\n";
+            bbmap.emplace(port_map.node_port, port_map.blackboard_value);
+    }
+
+    return BehaviorNodeContainer(
+        parent.name,
+        std::move(node),
+        std::move(bbmap),
+        std::move(child_nodes)
+    );
 }
 
 /// Instantiate a behavior tree from a AST of a tree.
@@ -560,10 +595,7 @@ std::optional<BehaviorNodeContainer> load(
 }
 
 void tick_node(BehaviorNodeContainer& node) {
-    Context context {
-        .child_nodes = &node.child_nodes,
-    };
-
-    node.node->tick(context);
+    Context context;
+    node.tick(context);
 }
 

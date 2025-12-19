@@ -20,6 +20,7 @@
 #include <unordered_map>
 #include <functional>
 #include <algorithm>
+#include <exception>
 
 enum class PortType {
     Input,
@@ -444,13 +445,41 @@ struct Registry {
 
 using Blackboard = std::unordered_map<std::string, std::string>;
 
+class undefined_port_error : std::exception {};
+
+std::ostream& operator<<(std::ostream& os, undefined_port_error& e) {
+    os << "Attempt to assign to an undefined port";
+    return os;
+}
+
+class undefined_variable_error : std::exception {};
+
+std::ostream& operator<<(std::ostream& os, undefined_variable_error& e) {
+    os << "Attempt to assign to a literal";
+    return os;
+}
+
+class write_input_port_error : std::exception {};
+
+std::ostream& operator<<(std::ostream& os, write_input_port_error& e) {
+    os << "Attempt to assign to a input port";
+    return os;
+}
+
+class write_to_literal_error : std::exception {};
+
+std::ostream& operator<<(std::ostream& os, write_to_literal_error& e) {
+    os << "Attempt to assign to a literal";
+    return os;
+}
+
 struct Context {
     Blackboard blackboard;
     BBMap *blackboard_map;
     std::vector<BehaviorNodeContainer>* child_nodes;
 //    bool strict;
 
-    std::optional<std::string> get(const std::string port_name) const {
+    std::optional<std::string> get(const std::string& port_name) const {
         auto var_it = blackboard_map->find(port_name);
         if (var_it != blackboard_map->end()) {
             if (auto x = std::get_if<0>(&var_it->second)) {
@@ -464,6 +493,25 @@ struct Context {
             }
         }
         return std::nullopt;
+    }
+
+    void set(const std::string& port_name, const std::string& value) {
+        auto var_it = blackboard_map->find(port_name);
+        if (var_it == blackboard_map->end()) {
+            throw undefined_port_error{};
+        }
+        if (auto x = std::get_if<0>(&var_it->second)) {
+            if (x->second == PortType::Input) {
+                throw write_input_port_error{};
+            }
+            auto y = blackboard.find(x->first);
+            if (y == blackboard.end()) {
+                throw undefined_variable_error{};
+            }
+            y->second = value;
+            return;
+        }
+        throw write_to_literal_error{};
     }
 };
 
@@ -507,9 +555,6 @@ public:
 
 class SequenceNode : public BehaviorNode {
     BehaviorResult tick(Context& context) override {
-        std::cout << "SequenceNode ticked!!\n";
-
-        std::cout << "prev_child_nodes: " << context.child_nodes->size() << "\n";
         for (auto& node : *context.child_nodes) {
             auto result = node.tick(context);
             bool break_out = false;
@@ -527,11 +572,7 @@ class SequenceNode : public BehaviorNode {
 
 class FallbackNode : public BehaviorNode {
     BehaviorResult tick(Context& context) override {
-        std::cout << "FallbackNode ticked!!\n";
-
-        std::vector<BehaviorNodeContainer>* prev_child_nodes = context.child_nodes;
-        std::cout << "prev_child_nodes: " << (prev_child_nodes->size()) << "\n";
-        for (auto& node : *prev_child_nodes) {
+        for (auto& node : *context.child_nodes) {
             auto result = node.tick(context);
             bool break_out = false;
             switch (result) {
@@ -541,7 +582,17 @@ class FallbackNode : public BehaviorNode {
             }
             if (break_out) break;
         }
-        context.child_nodes = prev_child_nodes;
+
+        return BehaviorResult::Success;
+    }
+};
+
+class SetValueNode : public BehaviorNode {
+    BehaviorResult tick(Context& context) override {
+        auto var_it = context.get("input");
+        if (var_it) {
+            context.set("output", *var_it);
+        }
 
         return BehaviorResult::Success;
     }
@@ -556,6 +607,9 @@ Registry defaultRegistry() {
     registry.node_types.emplace(std::string("Fallback"),
         std::function([](){ return static_cast<std::unique_ptr<BehaviorNode>>(
             std::make_unique<FallbackNode>()); }));
+    registry.node_types.emplace(std::string("SetValue"),
+        std::function([](){ return static_cast<std::unique_ptr<BehaviorNode>>(
+            std::make_unique<SetValueNode>()); }));
 
     return registry;
 }

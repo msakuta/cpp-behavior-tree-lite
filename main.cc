@@ -111,7 +111,8 @@ void test_fallback_tree() {
 void test_blackboard() {
     std::string src = R"(tree main = Sequence {
     Print (input <- foo)
-    GetValue (output -> bbValue)
+    SetValue (input <- "Hey", output -> foo)
+    Print (input <- foo)
     })";
 
     build_and_run(src);

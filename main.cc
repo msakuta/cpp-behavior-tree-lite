@@ -82,7 +82,10 @@ void build_and_run(std::string_view src) {
             std::cout << "    " << child.name << "\n";
         }
 
-        tick_node(*tree);
+        Blackboard bb;
+        bb["foo"] = "bar";
+
+        tick_node(*tree, bb);
     }
 }
 
@@ -105,6 +108,15 @@ void test_fallback_tree() {
     build_and_run(src);
 }
 
+void test_blackboard() {
+    std::string src = R"(tree main = Sequence {
+    Print (input <- foo)
+    GetValue (output -> bbValue)
+    })";
+
+    build_and_run(src);
+}
+
 void test_string_literal() {
     std::string src = R"(  "hey"   )";
     auto res = string_literal(src);
@@ -118,9 +130,10 @@ void test_string_literal() {
 }
 
 int main() {
-    test_tree();
+    //test_tree();
     //test_fallback_tree();
     //test_string_literal();
+    test_blackboard();
     return 0;
 }
 

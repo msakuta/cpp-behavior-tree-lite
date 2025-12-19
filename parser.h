@@ -27,6 +27,7 @@ enum class PortType {
     Inout,
 };
 
+/// The first variant is a variable reference. The second is a literal.
 using BlackboardValue = std::variant<std::pair<std::string, PortType>, std::string>;
 
 struct PortMap {
@@ -441,8 +442,10 @@ struct Registry {
     std::unordered_map<std::string, std::string> key_names;
 };
 
+using Blackboard = std::unordered_map<std::string, std::string>;
+
 struct Context {
-//    Blackboard blackboard;
+    Blackboard blackboard;
     BBMap *blackboard_map;
     std::vector<BehaviorNodeContainer>* child_nodes;
 //    bool strict;
@@ -451,7 +454,10 @@ struct Context {
         auto var_it = blackboard_map->find(port_name);
         if (var_it != blackboard_map->end()) {
             if (auto x = std::get_if<0>(&var_it->second)) {
-                return x->first;
+                if (x->second == PortType::Output) return std::nullopt;
+                auto y = blackboard.find(x->first);
+                if (y == blackboard.end()) return std::nullopt;
+                return y->second;
             }
             if (auto x = std::get_if<1>(&var_it->second)) {
                 return *x;
@@ -607,8 +613,8 @@ std::optional<BehaviorNodeContainer> load(
     return tree_con;
 }
 
-void tick_node(BehaviorNodeContainer& node) {
-    Context context;
+void tick_node(BehaviorNodeContainer& node, Blackboard &bb) {
+    Context context { .blackboard = bb };
     node.tick(context);
 }
 

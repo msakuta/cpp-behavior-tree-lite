@@ -21,6 +21,8 @@
 #include <functional>
 #include <algorithm>
 #include <exception>
+#include <string>
+#include <iostream>
 
 enum class PortType {
     Input,
@@ -112,6 +114,16 @@ using IResult = std::variant<Res<T>, std::string>;
 Res<std::string_view> space(std::string_view i) {
     auto r = i;
     while (!r.empty() && isspace(r[0])) {
+        r = r.substr(1);
+    }
+    return std::make_pair(r, i.substr(0, r.data() - i.data()));
+}
+
+/// The infallible empty lines skipper.
+/// It is not the same as space, because a newline can be significant in some context.
+Res<std::string_view> empty_lines(std::string_view i) {
+    auto r = space(i).first;
+    while (!r.empty() && (isspace(r[0]) || r[0] == '\r' || r[0] == '\n')) {
         r = r.substr(1);
     }
     return std::make_pair(r, i.substr(0, r.data() - i.data()));
@@ -368,6 +380,7 @@ inline std::ostream &operator<<(std::ostream& os, const std::vector<Tree>& trees
 }
 
 IResult<Tree> parse_tree(std::string_view i) {
+    i = empty_lines(i).first;
     auto res = identifier(i);
     if (auto e = std::get_if<1>(&res)) {
         return std::string("Did not recognize the first identifier: " + *e);
@@ -396,8 +409,10 @@ IResult<Tree> parse_tree(std::string_view i) {
         return std::string("TreeDef parse error: " + *e);
     }
     auto r5 = std::get<0>(res5);
+    // Eat extra newlines after the last node
+    auto r6 = empty_lines(r5.first);
 
-    return std::make_pair(r5.first, Tree{
+    return std::make_pair(r6.first, Tree{
         .name = std::string(r2.second),
         .node = r5.second
     });

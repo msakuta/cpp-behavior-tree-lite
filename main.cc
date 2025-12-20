@@ -1,7 +1,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
-#include "parser.h"
+#include "behavior_tree_lite.h"
 
 void test_identifier() {
     std::string src = "Hello world lorem ipsum some_thing\n";

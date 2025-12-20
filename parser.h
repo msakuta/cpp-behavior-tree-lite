@@ -445,12 +445,11 @@ struct Registry {
 
 using Blackboard = std::unordered_map<std::string, std::string>;
 
-class undefined_port_error : std::exception {};
-
-std::ostream& operator<<(std::ostream& os, undefined_port_error& e) {
-    os << "Attempt to assign to an undefined port";
-    return os;
-}
+class undefined_port_error : public std::exception {
+    const char* what() const noexcept override {
+        return "Attempt to assign to an undefined port";
+    }
+};
 
 class undefined_variable_error : public std::exception {
     const char* what() const noexcept override {
@@ -501,11 +500,7 @@ struct Context {
             if (x->second == PortType::Input) {
                 throw write_input_port_error{};
             }
-            auto y = blackboard.find(x->first);
-            if (y == blackboard.end()) {
-                throw undefined_variable_error{};
-            }
-            y->second = value;
+            blackboard[x->first] = value;
             return;
         }
         throw write_to_literal_error{};
@@ -537,7 +532,15 @@ public:
             context.child_nodes = &this->child_nodes;
             auto prev_blackboard_map = context.blackboard_map;
             context.blackboard_map = &this->blackboard_map;
-            auto res = this->node->tick(context);
+            BehaviorResult res;
+            try {
+                res = this->node->tick(context);
+            }
+            catch (std::exception &e) {
+                context.child_nodes = prev_child_node;
+                context.blackboard_map = prev_blackboard_map;
+                throw;
+            }
             context.child_nodes = prev_child_node;
             context.blackboard_map = prev_blackboard_map;
             return res;

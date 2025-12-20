@@ -116,11 +116,19 @@ void test_blackboard() {
     build_and_run(src);
 }
 
-void test_blackboard_err() {
+void test_blackboard_create_var() {
     std::string src = R"(tree main = Sequence {
     Print (input <- foo)
     SetValue (input <- "Hey", output -> bar)
-    Print (input <- foo)
+    Print (input <- bar)
+    })";
+
+    build_and_run(src);
+}
+
+void test_blackboard_err() {
+    std::string src = R"(tree main = Sequence {
+    SetValue (input <- "Hey", non_existent_port_name -> bar)
     })";
 
     build_and_run(src);
@@ -142,8 +150,9 @@ int main() {
     //test_tree();
     //test_fallback_tree();
     //test_string_literal();
-    test_blackboard();
-    test_blackboard_err();
+    //test_blackboard();
+    test_blackboard_create_var();
+    //test_blackboard_err();
     return 0;
 }
 

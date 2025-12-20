@@ -53,6 +53,25 @@ class GetValueNode : public BehaviorNode {
     }
 };
 
+class CountDownNode : public BehaviorNode {
+    int count = -1;
+    BehaviorResult tick(Context& context) override {
+        if (count < 0) {
+            auto bb_count = context.get("count");
+            if (bb_count) {
+                count = std::atoi(bb_count->c_str());
+            }
+        }
+        std::cout << "CountDown ticks " << count << "\n";
+        if (0 < --count) {
+            return BehaviorResult::Running;
+        }
+
+        return BehaviorResult::Success;
+    }
+};
+
+
 void build_and_run(std::string_view src) {
     auto res = source_text(src);
 
@@ -71,6 +90,9 @@ void build_and_run(std::string_view src) {
     registry.node_types.emplace(std::string("GetValue"),
         std::function([](){ return static_cast<std::unique_ptr<BehaviorNode>>(
             std::make_unique<GetValueNode>()); }));
+    registry.node_types.emplace(std::string("CountDown"),
+        std::function([](){ return static_cast<std::unique_ptr<BehaviorNode>>(
+            std::make_unique<CountDownNode>()); }));
     auto tree = load(pair.second, registry);
 
     std::cout << "Tree instantiated: " << !!tree << "\n";
@@ -79,7 +101,10 @@ void build_and_run(std::string_view src) {
         bb["foo"] = "bar";
 
         try {
-            tick_node(*tree, bb);
+            BehaviorResult res;
+            do {
+                res = tick_node(*tree, bb);
+            } while (res == BehaviorResult::Running);
         }
         catch(std::exception& e) {
             std::cout << "Error in tick_node: " << e.what() << "\n";
@@ -134,6 +159,15 @@ void test_blackboard_err() {
     build_and_run(src);
 }
 
+void test_countdown() {
+    std::string src = R"(tree main = Sequence {
+    CountDown (count <- "3")
+    Print(input <- "Boom!")
+    })";
+
+    build_and_run(src);
+}
+
 void test_string_literal() {
     std::string src = R"(  "hey"   )";
     auto res = string_literal(src);
@@ -151,8 +185,9 @@ int main() {
     //test_fallback_tree();
     //test_string_literal();
     //test_blackboard();
-    test_blackboard_create_var();
+    //test_blackboard_create_var();
     //test_blackboard_err();
+    test_countdown();
     return 0;
 }
 

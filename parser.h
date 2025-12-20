@@ -554,36 +554,49 @@ public:
 };
 
 class SequenceNode : public BehaviorNode {
+    int current_child = 0;
     BehaviorResult tick(Context& context) override {
-        for (auto& node : *context.child_nodes) {
-            auto result = node.tick(context);
+        BehaviorResult result = BehaviorResult::Success;
+        while (current_child < context.child_nodes->size()) {
+            result = (*context.child_nodes)[current_child].tick(context);
             bool break_out = false;
             switch (result) {
-                case BehaviorResult::Success: break;
-                case BehaviorResult::Fail: break_out = true; break;
+                case BehaviorResult::Success: current_child++; break;
+                case BehaviorResult::Fail: current_child++; break_out = true; break;
                 case BehaviorResult::Running: break_out = true; break;
             }
             if (break_out) break;
         }
+        if (current_child == context.child_nodes->size()) {
+            current_child = 0;
+        }
 
-        return BehaviorResult::Success;
+        return result;
     }
 };
 
 class FallbackNode : public BehaviorNode {
+    int current_child = 0;
     BehaviorResult tick(Context& context) override {
-        for (auto& node : *context.child_nodes) {
-            auto result = node.tick(context);
+        BehaviorResult result = BehaviorResult::Fail;
+        while (current_child < context.child_nodes->size()) {
+            result = (*context.child_nodes)[current_child].tick(context);
             bool break_out = false;
             switch (result) {
-                case BehaviorResult::Success: break_out = true; break;
-                case BehaviorResult::Fail: break;
+                case BehaviorResult::Success: current_child++; break_out = true; break;
+                case BehaviorResult::Fail: current_child++; break;
                 case BehaviorResult::Running: break_out = true; break;
             }
-            if (break_out) break;
+            if (break_out) {
+                current_child++;
+                break;
+            }
+        }
+        if (current_child == context.child_nodes->size()) {
+            current_child = 0;
         }
 
-        return BehaviorResult::Success;
+        return result;
     }
 };
 
@@ -667,8 +680,8 @@ std::optional<BehaviorNodeContainer> load(
     return tree_con;
 }
 
-void tick_node(BehaviorNodeContainer& node, Blackboard &bb) {
+BehaviorResult tick_node(BehaviorNodeContainer& node, Blackboard &bb) {
     Context context { .blackboard = bb };
-    node.tick(context);
+    return node.tick(context);
 }
 

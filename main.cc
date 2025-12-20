@@ -75,17 +75,15 @@ void build_and_run(std::string_view src) {
 
     std::cout << "Tree instantiated: " << !!tree << "\n";
     if (tree) {
-        std::cout << "  Name: " << tree->name << "\n";
-        auto& child_nodes = tree->get_child_nodes();
-        std::cout << "  Children: " << child_nodes.size() << "\n";
-        for (auto& child : child_nodes) {
-            std::cout << "    " << child.name << "\n";
-        }
-
         Blackboard bb;
         bb["foo"] = "bar";
 
-        tick_node(*tree, bb);
+        try {
+            tick_node(*tree, bb);
+        }
+        catch(std::exception& e) {
+            std::cout << "Error in tick_node: " << e.what() << "\n";
+        }
     }
 }
 
@@ -118,6 +116,16 @@ void test_blackboard() {
     build_and_run(src);
 }
 
+void test_blackboard_err() {
+    std::string src = R"(tree main = Sequence {
+    Print (input <- foo)
+    SetValue (input <- "Hey", output -> bar)
+    Print (input <- foo)
+    })";
+
+    build_and_run(src);
+}
+
 void test_string_literal() {
     std::string src = R"(  "hey"   )";
     auto res = string_literal(src);
@@ -135,6 +143,7 @@ int main() {
     //test_fallback_tree();
     //test_string_literal();
     test_blackboard();
+    test_blackboard_err();
     return 0;
 }
 

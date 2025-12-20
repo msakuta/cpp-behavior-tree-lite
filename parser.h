@@ -452,26 +452,23 @@ std::ostream& operator<<(std::ostream& os, undefined_port_error& e) {
     return os;
 }
 
-class undefined_variable_error : std::exception {};
+class undefined_variable_error : public std::exception {
+    const char* what() const noexcept override {
+        return "Attempt to assign to a literal";
+    }
+};
 
-std::ostream& operator<<(std::ostream& os, undefined_variable_error& e) {
-    os << "Attempt to assign to a literal";
-    return os;
-}
+class write_input_port_error : public std::exception {
+    const char* what() const noexcept override {
+        return "Attempt to assign to a input port";
+    }
+};
 
-class write_input_port_error : std::exception {};
-
-std::ostream& operator<<(std::ostream& os, write_input_port_error& e) {
-    os << "Attempt to assign to a input port";
-    return os;
-}
-
-class write_to_literal_error : std::exception {};
-
-std::ostream& operator<<(std::ostream& os, write_to_literal_error& e) {
-    os << "Attempt to assign to a literal";
-    return os;
-}
+class write_to_literal_error : public std::exception {
+    const char* what() const noexcept override {
+        return "Attempt to assign to a literal";
+    }
+};
 
 struct Context {
     Blackboard blackboard;

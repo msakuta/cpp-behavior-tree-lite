@@ -13,6 +13,9 @@
 /// It is `std::pair<std::string_view, T>`, which is just a tuple
 /// `(&str, T)` in Rust.
 
+#ifndef BEHAVIOR_TREE_LITE_H
+#define BEHAVIOR_TREE_LITE_H
+
 #include <string_view>
 #include <variant>
 #include <optional>
@@ -23,6 +26,8 @@
 #include <exception>
 #include <string>
 #include <iostream>
+
+namespace behavior_tree_lite {
 
 enum class PortType {
     Input,
@@ -661,8 +666,7 @@ BehaviorNodeContainer load_recurse(
 
     BBMap bbmap;
     for (auto& port_map : parent.port_maps) {
-        std::cout << "port_map " << port_map.node_port << " literal: " << port_map.blackboard_literal << "\n";
-            bbmap.emplace(port_map.node_port, port_map.blackboard_value);
+        bbmap.emplace(port_map.node_port, port_map.blackboard_value);
     }
 
     return BehaviorNodeContainer(
@@ -700,3 +704,6 @@ BehaviorResult tick_node(BehaviorNodeContainer& node, Blackboard &bb) {
     return node.tick(context);
 }
 
+}
+
+#endif // BEHAVIOR_TREE_LITE_H

@@ -5,6 +5,8 @@
 #include <thread>
 #include <chrono>
 
+using namespace behavior_tree_lite;
+
 // Note that the ball states are stored in global variables, which is not the best practice in production.
 // We do this here for brevity.
 // Consider putting them in a struct and exchange information to the behavior nodes by context variables.

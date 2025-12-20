@@ -87,14 +87,11 @@ void build_and_run(std::string_view src) {
 
     auto registry = defaultRegistry();
     registry.node_types.emplace(std::string("Print"),
-        std::function([](){ return static_cast<std::unique_ptr<BehaviorNode>>(
-            std::make_unique<PrintNode>()); }));
+        std::function([](){ return std::make_unique<PrintNode>(); }));
     registry.node_types.emplace(std::string("GetValue"),
-        std::function([](){ return static_cast<std::unique_ptr<BehaviorNode>>(
-            std::make_unique<GetValueNode>()); }));
+        std::function([](){ return std::make_unique<GetValueNode>(); }));
     registry.node_types.emplace(std::string("CountDown"),
-        std::function([](){ return static_cast<std::unique_ptr<BehaviorNode>>(
-            std::make_unique<CountDownNode>()); }));
+        std::function([](){ return std::make_unique<CountDownNode>(); }));
     auto tree = load(pair.second, registry);
 
     std::cout << "Tree instantiated: " << !!tree << "\n";

@@ -595,6 +595,25 @@ class SequenceNode : public BehaviorNode {
     }
 };
 
+class SequenceStarNode : public BehaviorNode {
+    BehaviorResult tick(Context& context) override {
+        int current_child = 0;
+        BehaviorResult result = BehaviorResult::Success;
+        while (current_child < context.child_nodes->size()) {
+            result = (*context.child_nodes)[current_child].tick(context);
+            bool break_out = false;
+            switch (result) {
+                case BehaviorResult::Success: current_child++; break;
+                case BehaviorResult::Fail: current_child++; break_out = true; break;
+                case BehaviorResult::Running: break_out = true; break;
+            }
+            if (break_out) break;
+        }
+
+        return result;
+    }
+};
+
 class FallbackNode : public BehaviorNode {
     int current_child = 0;
     BehaviorResult tick(Context& context) override {
@@ -620,6 +639,28 @@ class FallbackNode : public BehaviorNode {
     }
 };
 
+class FallbackStarNode : public BehaviorNode {
+    BehaviorResult tick(Context& context) override {
+        BehaviorResult result = BehaviorResult::Fail;
+        int current_child = 0;
+        while (current_child < context.child_nodes->size()) {
+            result = (*context.child_nodes)[current_child].tick(context);
+            bool break_out = false;
+            switch (result) {
+                case BehaviorResult::Success: current_child++; break_out = true; break;
+                case BehaviorResult::Fail: current_child++; break;
+                case BehaviorResult::Running: break_out = true; break;
+            }
+            if (break_out) {
+                current_child++;
+                break;
+            }
+        }
+
+        return result;
+    }
+};
+
 class SetValueNode : public BehaviorNode {
     BehaviorResult tick(Context& context) override {
         auto var_it = context.get("input");
@@ -635,14 +676,15 @@ Registry defaultRegistry() {
     Registry registry;
 
     registry.node_types.emplace(std::string("Sequence"),
-        std::function([](){ return static_cast<std::unique_ptr<BehaviorNode>>(
-            std::make_unique<SequenceNode>()); }));
+        std::function([](){ return std::make_unique<SequenceNode>(); }));
+    registry.node_types.emplace(std::string("SequenceStar"),
+        std::function([](){ return std::make_unique<SequenceStarNode>(); }));
     registry.node_types.emplace(std::string("Fallback"),
-        std::function([](){ return static_cast<std::unique_ptr<BehaviorNode>>(
-            std::make_unique<FallbackNode>()); }));
+        std::function([](){ return std::make_unique<FallbackNode>(); }));
+    registry.node_types.emplace(std::string("FallbackStar"),
+        std::function([](){ return std::make_unique<FallbackStarNode>(); }));
     registry.node_types.emplace(std::string("SetValue"),
-        std::function([](){ return static_cast<std::unique_ptr<BehaviorNode>>(
-            std::make_unique<SetValueNode>()); }));
+        std::function([](){ return std::make_unique<SetValueNode>(); }));
 
     return registry;
 }

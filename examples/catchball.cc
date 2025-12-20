@@ -70,11 +70,9 @@ void run() {
 
     auto registry = defaultRegistry();
     registry.node_types.emplace(std::string("CatchBall"),
-        std::function([](){ return static_cast<std::unique_ptr<BehaviorNode>>(
-            std::make_unique<CatchBall>()); }));
+        std::function([](){ return std::make_unique<CatchBall>(); }));
     registry.node_types.emplace(std::string("ThrowBall"),
-        std::function([](){ return static_cast<std::unique_ptr<BehaviorNode>>(
-            std::make_unique<ThrowBall>()); }));
+        std::function([](){ return std::make_unique<ThrowBall>(); }));
 
     auto player_A_tree = load(pair.second, registry);
     Blackboard player_A_bb = Blackboard{};

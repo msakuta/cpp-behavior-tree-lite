@@ -18,6 +18,15 @@ tree main = Sequence {
 
 The [rusty-behavior-tree-lite](https://github.com/msakuta/rusty-behavior-tree-lite) library was quite nice, so I wanted to "backport" to C++, since many people still use C++ in robotics and gaming.
 
+## Features TODO
+
+* [ ] Subtrees
+* [ ] Variables in tree definitions
+* [ ] Static check on port types
+* [ ] Type erasure on blackboard variables
+* [ ] Shorthand `if` node notation
+* [ ] Shorthand logical expression (`||`, `&&` and `!`)
+
 ## Examples
 
 ### Catchball example

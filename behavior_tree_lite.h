@@ -32,7 +32,7 @@ namespace behavior_tree_lite {
 enum class PortType {
     Input,
     Output,
-    Inout,
+    InOut,
 };
 
 /// The first variant is a variable reference. The second is a literal.
@@ -52,6 +52,17 @@ struct TreeDef {
     std::string name;
     PortMaps port_maps;
     std::vector<TreeDef> children;
+};
+
+struct PortDef {
+    PortType direction;
+    std::string name;
+};
+
+struct TreeRootDef {
+    std::string name;
+    TreeDef root;
+    std::vector<PortDef> ports;
 };
 
 thread_local size_t indent_level = 1;
@@ -83,7 +94,7 @@ std::ostream &operator<<(std::ostream& os, const TreeDef& node) {
             case PortType::Output:
                 os << " -> ";
                 break;
-            case PortType::Inout:
+            case PortType::InOut:
                 os << " <-> ";
                 break;
         }
@@ -255,7 +266,7 @@ IResult<PortMap> port_map(std::string_view i) {
     }
     else if (r.substr(0, 3) == "<->") {
         next = r.substr(3);
-        ty = PortType::Inout;
+        ty = PortType::InOut;
     }
     else {
         return std::string("Expected \"<-\", \"->\" or \"<->\"");
@@ -361,6 +372,7 @@ IResult<TreeDef> parse_tree_node(std::string_view i) {
 struct Tree {
     std::string name;
     TreeDef node;
+    std::vector<PortDef> ports;
 };
 
 inline std::ostream &operator<<(std::ostream& os, const Tree& tree) {
@@ -384,6 +396,70 @@ inline std::ostream &operator<<(std::ostream& os, const std::vector<Tree>& trees
     return os;
 }
 
+inline IResult<PortDef> port_def(std::string_view i) {
+    i = space(i).first;
+    auto first = identifier(i);
+    if (auto e = std::get_if<1>(&first)) {
+        return *e;
+    }
+    auto first_ok = std::get<0>(first);
+
+    PortType direction;
+    if (first_ok.second == "in") {
+        direction = PortType::Input;
+    }
+    else if (first_ok.second == "out") {
+        direction = PortType::Output;
+    }
+    else if (first_ok.second == "inout") {
+        direction = PortType::InOut;
+    }
+
+    auto res = identifier(first_ok.first);
+    if (auto e = std::get_if<1>(&res)) {
+        return *e;
+    }
+    auto res_ok = std::get<0>(res);
+
+    return std::make_pair(res_ok.first, PortDef {
+        .direction = direction,
+        .name = std::string(res_ok.second),
+    });
+}
+
+inline IResult<std::vector<PortDef>> subtree_ports_def(std::string_view i) {
+    i = space(i).first;
+    if (i.empty() || i[0] != '(') {
+        return std::string("Expected opening paren '('");
+    }
+    auto r = i.substr(1);
+
+    std::vector<PortDef> result;
+
+    while (!r.empty()) {
+        auto res = port_def(r);
+        auto pair = std::get_if<0>(&res);
+        if (!pair) {
+            break;
+        }
+        result.push_back(pair->second);
+        r = pair->first;
+        auto res4 = match_char<','>(r);
+        if (auto e = std::get_if<1>(&res4)) {
+            break;
+        }
+        r = std::get<0>(res4).first;
+    }
+
+    r = space(r).first;
+    if (r.empty() || r[0] != ')') {
+        return std::string("Expected closing paren ')'");
+    }
+    r = r.substr(1);
+
+    return std::make_pair(r, result);
+}
+
 IResult<Tree> parse_tree(std::string_view i) {
     i = empty_lines(i).first;
     auto res = identifier(i);
@@ -400,14 +476,22 @@ IResult<Tree> parse_tree(std::string_view i) {
     if (auto e = std::get_if<1>(&res2)) {
         return std::string("Missing tree name: " + *e);
     }
+    auto name_ok = std::get<0>(res2);
+    auto r2 = name_ok.first;
 
-    auto r2 = std::get<0>(res2);
-    auto r3 = space(r2.first);
-    if (r3.first.empty() || r3.first[0] != '=') {
+    std::vector<PortDef> port_defs;
+    auto res3 = subtree_ports_def(r2);
+    if (auto res3_ok = std::get_if<0>(&res3)) {
+        port_defs = res3_ok->second;
+        r2 = res3_ok->first;
+    }
+
+    auto r3 = space(r2).first;
+    if (r3.empty() || r3[0] != '=') {
         return std::string("Tree name should be followed by a equal (=)");
     }
     // Skip the equal
-    auto r4 = r3.first.substr(1);
+    auto r4 = r3.substr(1);
 
     auto res5 = parse_tree_node(r4);
     if (auto e = std::get_if<1>(&res5)) {
@@ -418,8 +502,9 @@ IResult<Tree> parse_tree(std::string_view i) {
     auto r6 = empty_lines(r5.first);
 
     return std::make_pair(r6.first, Tree{
-        .name = std::string(r2.second),
-        .node = r5.second
+        .name = std::string(name_ok.second),
+        .node = r5.second,
+        .ports = port_defs,
     });
 }
 
@@ -525,6 +610,8 @@ struct Context {
         }
         throw write_to_literal_error{};
     }
+
+    std::optional<BehaviorResult> tick_child(int idx);
 };
 
 struct BehaviorNodeContainer {
@@ -572,6 +659,13 @@ public:
         return child_nodes;
     }
 };
+
+inline std::optional<BehaviorResult> Context::tick_child(int idx) {
+    auto children = this->child_nodes;
+    if (children->size() <= idx) return std::nullopt;
+    auto& child = (*children)[idx];
+    return child.tick(*this);
+}
 
 class SequenceNode : public BehaviorNode {
     int current_child = 0;
@@ -672,6 +766,75 @@ class SetValueNode : public BehaviorNode {
     }
 };
 
+struct PortSpec {
+    PortType ty;
+    std::string key;
+
+    static PortSpec new_in(const std::string& key) {
+        return PortSpec {
+            .ty = PortType::Input,
+            .key = key,
+        };
+    }
+
+    static PortSpec new_out(const std::string& key) {
+        return PortSpec {
+            .ty = PortType::Output,
+            .key = key,
+        };
+    }
+
+    static PortSpec new_inout(const std::string& key) {
+        return PortSpec {
+            .ty = PortType::InOut,
+            .key = key,
+        };
+    }
+};
+
+
+/// SubtreeNode is a container for a subtree, introducing a local namescope of blackboard variables.
+struct SubtreeNode : public BehaviorNode {
+    /// Blackboard variables needs to be a part of the node payload
+    Blackboard blackboard;
+    std::vector<PortSpec> params;
+
+    SubtreeNode(Blackboard blackboard, std::vector<PortSpec> params) :
+        blackboard(std::move(blackboard)), params(std::move(params)) {
+    }
+
+    BehaviorResult tick(Context& ctx) override {
+        BehaviorResult res = BehaviorResult::Success;
+        for (auto& param : params) {
+            if (param.ty != PortType::Input && param.ty != PortType::InOut) {
+                continue;
+            }
+            if (auto value = ctx.get(param.key)) {
+                blackboard[param.key] = *value;
+            }
+        }
+
+        std::swap(blackboard, ctx.blackboard);
+        auto sub_res = ctx.tick_child(0);
+        if (sub_res) res = *sub_res;
+        std::swap(blackboard, ctx.blackboard);
+
+        // It is debatable if we should assign the output value back to the parent blackboard
+        // when the result was Fail or Running. We chose to assign them, which seems less counterintuitive.
+        for (auto& param : params) {
+            if (param.ty != PortType::Output || param.ty != PortType::InOut) {
+                continue;
+            }
+            auto value = blackboard.find(param.key);
+            if (value != blackboard.end()) {
+                ctx.set(param.key, value->second);
+            }
+        }
+
+        return res;
+    }
+};
+
 Registry defaultRegistry() {
     Registry registry;
 
@@ -695,15 +858,33 @@ BehaviorNodeContainer load_recurse(
     const Registry& registry
 ) {
     std::vector<BehaviorNodeContainer> child_nodes;
-    std::transform(parent.children.begin(), parent.children.end(), std::back_inserter(child_nodes),
+
+    std::unique_ptr<BehaviorNode> node;
+    auto tree_it = std::find_if(tree_source.begin(), tree_source.end(), [&parent](auto& tree) {
+        return tree.name == parent.name;
+    });
+    if (tree_it != tree_source.end()) {
+        std::vector<PortSpec> port_specs;
+        std::transform(tree_it->ports.begin(), tree_it->ports.end(), std::back_inserter(port_specs),
+            [](auto& port) {
+                return PortSpec {
+                    .ty = port.direction,
+                    .key = port.name,
+                };
+            });
+        node = std::make_unique<SubtreeNode>(Blackboard{}, port_specs);
+        child_nodes.push_back(load_recurse(tree_it->node, tree_source, registry));
+    }
+    else {
+        std::transform(parent.children.begin(), parent.children.end(), std::back_inserter(child_nodes),
         [&tree_source, &registry](auto& child){
             return load_recurse(child, tree_source, registry);
         });
 
-    std::unique_ptr<BehaviorNode> node;
-    auto node_it = registry.node_types.find(parent.name);
-    if (node_it != registry.node_types.end()) {
-        node = node_it->second();
+        auto node_it = registry.node_types.find(parent.name);
+        if (node_it != registry.node_types.end()) {
+            node = node_it->second();
+        }
     }
 
     BBMap bbmap;

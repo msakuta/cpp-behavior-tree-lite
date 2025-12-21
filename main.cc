@@ -167,6 +167,19 @@ void test_countdown() {
     build_and_run(src);
 }
 
+void test_subtree() {
+    std::string src = R"(tree main = Sequence {
+    SubTree(param <- "Hello")
+}
+
+tree SubTree(in param) = Sequence {
+    Print(input <- param)
+}
+)";
+
+    build_and_run(src);
+}
+
 void test_string_literal() {
     std::string src = R"(  "hey"   )";
     auto res = string_literal(src);
@@ -186,7 +199,8 @@ int main() {
     //test_blackboard();
     //test_blackboard_create_var();
     //test_blackboard_err();
-    test_countdown();
+    //test_countdown();
+    test_subtree();
     return 0;
 }
 

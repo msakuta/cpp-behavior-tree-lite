@@ -20,7 +20,7 @@ The [rusty-behavior-tree-lite](https://github.com/msakuta/rusty-behavior-tree-li
 
 ## Features TODO
 
-* [ ] Subtrees
+* [x] Subtrees
 * [ ] Variables in tree definitions
 * [ ] Static check on port types
 * [ ] Type erasure on blackboard variables

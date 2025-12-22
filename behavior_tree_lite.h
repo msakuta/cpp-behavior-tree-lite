@@ -558,7 +558,18 @@ class undefined_port_error : public std::exception {
 
 class undefined_variable_error : public std::exception {
     const char* what() const noexcept override {
-        return "Attempt to assign to a literal";
+        return "Could not find the named variable";
+    }
+};
+
+class undefined_node_error : public std::exception {
+    std::string name;
+public:
+    undefined_node_error(std::string name) : name(std::move(name)) {}
+    const char* what() const noexcept override {
+        thread_local std::string ret;
+        ret = std::string("Could not find the node type name: ") + name;
+        return ret.c_str();
     }
 };
 
@@ -755,6 +766,34 @@ class FallbackStarNode : public BehaviorNode {
     }
 };
 
+class InverterNode : public BehaviorNode {
+    BehaviorResult tick(Context& context) override {
+        BehaviorResult result = BehaviorResult::Fail;
+        const auto child = context.child_nodes->begin();
+        if (child != context.child_nodes->end()) {
+            result = child->tick(context);
+            switch (result) {
+                case BehaviorResult::Success: result = BehaviorResult::Fail; break;
+                case BehaviorResult::Fail: result = BehaviorResult::Success; break;
+            }
+        }
+
+        return result;
+    }
+};
+
+class TrueNode : public BehaviorNode {
+    BehaviorResult tick(Context& context) override {
+        return BehaviorResult::Success;
+    }
+};
+
+class FalseNode : public BehaviorNode {
+    BehaviorResult tick(Context& context) override {
+        return BehaviorResult::Fail;
+    }
+};
+
 class SetValueNode : public BehaviorNode {
     BehaviorResult tick(Context& context) override {
         auto var_it = context.get("input");
@@ -846,6 +885,12 @@ Registry defaultRegistry() {
         std::function([](){ return std::make_unique<FallbackNode>(); }));
     registry.node_types.emplace(std::string("FallbackStar"),
         std::function([](){ return std::make_unique<FallbackStarNode>(); }));
+    registry.node_types.emplace(std::string("Inverter"),
+        std::function([](){ return std::make_unique<InverterNode>(); }));
+    registry.node_types.emplace(std::string("true"),
+        std::function([](){ return std::make_unique<TrueNode>(); }));
+    registry.node_types.emplace(std::string("false"),
+        std::function([](){ return std::make_unique<FalseNode>(); }));
     registry.node_types.emplace(std::string("SetValue"),
         std::function([](){ return std::make_unique<SetValueNode>(); }));
 
@@ -882,9 +927,10 @@ BehaviorNodeContainer load_recurse(
         });
 
         auto node_it = registry.node_types.find(parent.name);
-        if (node_it != registry.node_types.end()) {
-            node = node_it->second();
+        if (node_it == registry.node_types.end()) {
+            throw undefined_node_error{parent.name};
         }
+        node = node_it->second();
     }
 
     BBMap bbmap;

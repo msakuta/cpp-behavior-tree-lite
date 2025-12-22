@@ -180,6 +180,28 @@ tree SubTree(in param) = Sequence {
     build_and_run(src);
 }
 
+void test_true() {
+    std::string src = R"(tree main = Sequence {
+    true
+    Print(input <- "Hello")
+}
+)";
+
+    build_and_run(src);
+}
+
+void test_inverter() {
+    std::string src = R"(tree main = Sequence {
+    Inverter {
+        false
+    }
+    Print(input <- "Hello")
+}
+)";
+
+    build_and_run(src);
+}
+
 void test_string_literal() {
     std::string src = R"(  "hey"   )";
     auto res = string_literal(src);
@@ -200,7 +222,9 @@ int main() {
     //test_blackboard_create_var();
     //test_blackboard_err();
     //test_countdown();
-    test_subtree();
+    //test_subtree();
+    test_true();
+    test_inverter();
     return 0;
 }
 

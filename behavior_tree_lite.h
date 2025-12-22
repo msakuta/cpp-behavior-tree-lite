@@ -766,6 +766,34 @@ class FallbackStarNode : public BehaviorNode {
     }
 };
 
+class ForceSuccessNode : public BehaviorNode {
+    BehaviorResult tick(Context& context) override {
+        auto first = context.child_nodes->begin();
+        if (first != context.child_nodes->end()) {
+            auto result = first->tick(context);
+            switch (result) {
+                case BehaviorResult::Running: return BehaviorResult::Running;
+            }
+        }
+
+        return BehaviorResult::Success;
+    }
+};
+
+class ForceFailureNode : public BehaviorNode {
+    BehaviorResult tick(Context& context) override {
+        auto first = context.child_nodes->begin();
+        if (first != context.child_nodes->end()) {
+            auto result = first->tick(context);
+            switch (result) {
+                case BehaviorResult::Running: return BehaviorResult::Running;
+            }
+        }
+
+        return BehaviorResult::Fail;
+    }
+};
+
 class InverterNode : public BehaviorNode {
     BehaviorResult tick(Context& context) override {
         BehaviorResult result = BehaviorResult::Fail;
@@ -885,6 +913,10 @@ Registry defaultRegistry() {
         std::function([](){ return std::make_unique<FallbackNode>(); }));
     registry.node_types.emplace(std::string("FallbackStar"),
         std::function([](){ return std::make_unique<FallbackStarNode>(); }));
+    registry.node_types.emplace(std::string("ForceSuccess"),
+        std::function([](){ return std::make_unique<ForceSuccessNode>(); }));
+    registry.node_types.emplace(std::string("ForceFailure"),
+        std::function([](){ return std::make_unique<ForceFailureNode>(); }));
     registry.node_types.emplace(std::string("Inverter"),
         std::function([](){ return std::make_unique<InverterNode>(); }));
     registry.node_types.emplace(std::string("true"),

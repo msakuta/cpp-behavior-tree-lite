@@ -700,7 +700,7 @@ class SequenceNode : public BehaviorNode {
     }
 };
 
-class SequenceStarNode : public BehaviorNode {
+class ReactiveSequenceNode : public BehaviorNode {
     BehaviorResult tick(Context& context) override {
         int current_child = 0;
         BehaviorResult result = BehaviorResult::Success;
@@ -744,7 +744,7 @@ class FallbackNode : public BehaviorNode {
     }
 };
 
-class FallbackStarNode : public BehaviorNode {
+class ReactiveFallbackNode : public BehaviorNode {
     BehaviorResult tick(Context& context) override {
         BehaviorResult result = BehaviorResult::Fail;
         int current_child = 0;
@@ -907,12 +907,12 @@ Registry defaultRegistry() {
 
     registry.node_types.emplace(std::string("Sequence"),
         std::function([](){ return std::make_unique<SequenceNode>(); }));
-    registry.node_types.emplace(std::string("SequenceStar"),
-        std::function([](){ return std::make_unique<SequenceStarNode>(); }));
+    registry.node_types.emplace(std::string("ReactiveSequence"),
+        std::function([](){ return std::make_unique<ReactiveSequenceNode>(); }));
     registry.node_types.emplace(std::string("Fallback"),
         std::function([](){ return std::make_unique<FallbackNode>(); }));
-    registry.node_types.emplace(std::string("FallbackStar"),
-        std::function([](){ return std::make_unique<FallbackStarNode>(); }));
+    registry.node_types.emplace(std::string("ReactiveFallbackStar"),
+        std::function([](){ return std::make_unique<ReactiveFallbackNode>(); }));
     registry.node_types.emplace(std::string("ForceSuccess"),
         std::function([](){ return std::make_unique<ForceSuccessNode>(); }));
     registry.node_types.emplace(std::string("ForceFailure"),

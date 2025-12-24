@@ -585,6 +585,12 @@ class write_to_literal_error : public std::exception {
     }
 };
 
+class invalid_count_error : public std::exception {
+    const char* what() const noexcept override {
+        return "Invalid count string";
+    }
+};
+
 struct Context {
     Blackboard blackboard;
     BBMap *blackboard_map;
@@ -810,6 +816,60 @@ class InverterNode : public BehaviorNode {
     }
 };
 
+class RepeatNode : public BehaviorNode {
+    int n = 0;
+    BehaviorResult tick(Context& ctx) override {
+        BehaviorResult result = BehaviorResult::Fail;
+        auto n = ctx.get("n");
+        if (!n) throw invalid_count_error();
+        if (this->n == 0) this->n = std::atoi(n->c_str());
+        if (!this->n) {
+            throw invalid_count_error();
+        }
+        this->n--;
+        if (this->n == 0) {
+            return BehaviorResult::Success;
+        }
+        auto res = ctx.tick_child(0);
+        if (!res) return BehaviorResult::Fail;
+        if (res == BehaviorResult::Success) {
+            return BehaviorResult::Running;
+        }
+        else if (res == BehaviorResult::Running) {
+            return BehaviorResult::Running;
+        }
+        this->n = 0;
+        return *res;
+    }
+};
+
+class RetryNode : public BehaviorNode {
+    int n = 0;
+    BehaviorResult tick(Context& ctx) override {
+        BehaviorResult result = BehaviorResult::Fail;
+        auto n = ctx.get("n");
+        if (!n) throw invalid_count_error();
+        if (this->n == 0) this->n = std::atoi(n->c_str());
+        if (!this->n) {
+            throw invalid_count_error();
+        }
+        this->n--;
+        if (this->n == 0) {
+            return BehaviorResult::Success;
+        }
+        auto res = ctx.tick_child(0);
+        if (!res) return BehaviorResult::Fail;
+        if (res == BehaviorResult::Fail) {
+            return BehaviorResult::Running;
+        }
+        else if (res == BehaviorResult::Running) {
+            return BehaviorResult::Running;
+        }
+        this->n = 0;
+        return *res;
+    }
+};
+
 class TrueNode : public BehaviorNode {
     BehaviorResult tick(Context& context) override {
         return BehaviorResult::Success;
@@ -919,6 +979,10 @@ Registry defaultRegistry() {
         std::function([](){ return std::make_unique<ForceFailureNode>(); }));
     registry.node_types.emplace(std::string("Inverter"),
         std::function([](){ return std::make_unique<InverterNode>(); }));
+    registry.node_types.emplace(std::string("Repeat"),
+        std::function([](){ return std::make_unique<RepeatNode>(); }));
+    registry.node_types.emplace(std::string("Retry"),
+        std::function([](){ return std::make_unique<RetryNode>(); }));
     registry.node_types.emplace(std::string("true"),
         std::function([](){ return std::make_unique<TrueNode>(); }));
     registry.node_types.emplace(std::string("false"),

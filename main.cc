@@ -202,6 +202,52 @@ void test_inverter() {
     build_and_run(src);
 }
 
+void test_repeat() {
+    std::string src = R"(tree main = Repeat(n <- "5") {
+    Print(input <- "Hello")
+}
+)";
+
+    build_and_run(src);
+}
+
+void test_repeat_fail() {
+    std::string src = R"(tree main = Sequence {
+    Repeat(n <- "5") {
+        Sequence {
+            Print(input <- "Hello")
+            false
+        }
+    }
+}
+)";
+
+    build_and_run(src);
+}
+
+void test_retry() {
+    std::string src = R"(tree main = Retry(n <- "5") {
+    Print(input <- "Hello")
+}
+)";
+
+    build_and_run(src);
+}
+
+void test_retry_fail() {
+    std::string src = R"(tree main = Sequence {
+    Retry(n <- "5") {
+        Sequence {
+            Print(input <- "Hello")
+            false
+        }
+    }
+}
+)";
+
+    build_and_run(src);
+}
+
 void test_string_literal() {
     std::string src = R"(  "hey"   )";
     auto res = string_literal(src);
@@ -223,8 +269,12 @@ int main() {
     //test_blackboard_err();
     //test_countdown();
     //test_subtree();
-    test_true();
-    test_inverter();
+    //test_true();
+    //test_inverter();
+    //test_repeat();
+    //test_repeat_fail();
+    //test_retry();
+    test_retry_fail();
     return 0;
 }
 

@@ -65,6 +65,19 @@ struct TreeRootDef {
     std::vector<PortDef> ports;
 };
 
+struct VarDef {
+    std::string_view name;
+    std::string_view init;
+};
+
+struct VarAssign {
+    std::string_view name;
+    std::string_view init;
+};
+
+using TreeElem = std::variant<TreeDef, VarDef, VarAssign>;
+
+
 thread_local size_t indent_level = 1;
 
 /// A dummy type to introduce indentation to ostream.
@@ -190,11 +203,19 @@ IResult<std::string_view> unmatch_char(std::string_view i) {
 
 
 IResult<TreeDef> parse_tree_node(std::string_view i);
+IResult<TreeDef> parse_condition_node(std::string_view i);
 
-IResult<std::vector<TreeDef>> tree_children(std::string_view i) {
+inline IResult<std::vector<TreeDef>> tree_children(std::string_view i) {
     auto r = i;
     std::vector<TreeDef> ret;
     while (!r.empty()) {
+        auto res_cond = parse_condition_node(r);
+        auto pair_cond = std::get_if<0>(&res_cond);
+        if (pair_cond) {
+            ret.push_back(std::move(pair_cond->second));
+            r = pair_cond->first;
+            continue;
+        }
         auto res = parse_tree_node(r);
         auto pair = std::get_if<0>(&res);
         if (!pair) {
@@ -206,7 +227,7 @@ IResult<std::vector<TreeDef>> tree_children(std::string_view i) {
     return std::make_pair(r, ret);
 }
 
-IResult<std::vector<TreeDef>> tree_children_block(std::string_view i) {
+inline IResult<std::vector<TreeDef>> tree_children_block(std::string_view i) {
     i = space(i).first;
     auto res2 = match_char<'{'>(i);
     if (auto e = std::get_if<1>(&res2)) {
@@ -348,6 +369,10 @@ IResult<TreeDef> parse_tree_node(std::string_view i) {
     }
     auto r = std::get<0>(res);
 
+    if (r.second == "if") {
+        return parse_condition_node(r.first);
+    }
+
     auto next = r.first;
     PortMaps port_maps;
     auto ports_res = port_maps_parens(next);
@@ -365,6 +390,34 @@ IResult<TreeDef> parse_tree_node(std::string_view i) {
     return std::make_pair(next, TreeDef {
         .name = std::string(r.second),
         .port_maps = std::move(port_maps),
+        .children = std::move(children),
+    });
+}
+
+inline IResult<TreeDef> parse_condition_node(std::string_view i) {
+    auto r2 = space(i).first;
+    auto res2 = match_char<'('>(r2);
+    if (auto e = std::get_if<1>(&res2)) return *e;
+    auto res3 = parse_tree_node(std::get<0>(res2).first);
+    if (auto e = std::get_if<1>(&res3)) return *e;
+    auto [r3, condition] = std::get<0>(res3);
+    auto res4 = match_char<')'>(r3);
+    if (auto e = std::get_if<1>(&res4)) return *e;
+    auto [next, _] = std::get<0>(res4);
+    auto res5 = tree_children_block(next);
+    std::vector<TreeDef> children{condition};
+    if (auto r5 = std::get_if<0>(&res5)) {
+        next = r5->first;
+        auto true_br = TreeDef {
+            .name = "Sequence",
+            .port_maps = PortMaps{},
+            .children = std::move(r5->second),
+        };
+        children.push_back(std::move(true_br));
+    }
+    return std::make_pair(next, TreeDef {
+        .name = "if",
+        .port_maps = PortMaps{},
         .children = std::move(children),
     });
 }
@@ -893,6 +946,17 @@ class SetValueNode : public BehaviorNode {
     }
 };
 
+class IfNode : public BehaviorNode {
+    std::optional<BehaviorResult> condition_result;
+    BehaviorResult tick(Context& ctx) override {
+        auto res = ctx.tick_child(0);
+        if (res == BehaviorResult::Fail) return BehaviorResult::Fail;
+        auto res2 = ctx.tick_child(1);
+        if (res2) return *res2;
+        return BehaviorResult::Fail;
+    }
+};
+
 struct PortSpec {
     PortType ty;
     std::string key;
@@ -989,6 +1053,8 @@ Registry defaultRegistry() {
         std::function([](){ return std::make_unique<FalseNode>(); }));
     registry.node_types.emplace(std::string("SetValue"),
         std::function([](){ return std::make_unique<SetValueNode>(); }));
+    registry.node_types.emplace(std::string("if"),
+        std::function([](){ return std::make_unique<IfNode>(); }));
 
     return registry;
 }

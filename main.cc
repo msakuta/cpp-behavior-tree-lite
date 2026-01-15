@@ -248,6 +248,24 @@ void test_retry_fail() {
     build_and_run(src);
 }
 
+void test_conditional_true() {
+    std::string src = R"(tree main = if (true) {
+    Print(input <- "Got true")
+}
+)";
+
+    build_and_run(src);
+}
+
+void test_conditional_false() {
+    std::string src = R"(tree main = if (false) {
+    Print(input <- "Got true")
+}
+)";
+
+    build_and_run(src);
+}
+
 void test_string_literal() {
     std::string src = R"(  "hey"   )";
     auto res = string_literal(src);
@@ -274,7 +292,8 @@ int main() {
     //test_repeat();
     //test_repeat_fail();
     //test_retry();
-    test_retry_fail();
+    //test_retry_fail();
+    test_conditional_false();
     return 0;
 }
 

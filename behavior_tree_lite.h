@@ -209,13 +209,6 @@ inline IResult<std::vector<TreeDef>> tree_children(std::string_view i) {
     auto r = i;
     std::vector<TreeDef> ret;
     while (!r.empty()) {
-        auto res_cond = parse_condition_node(r);
-        auto pair_cond = std::get_if<0>(&res_cond);
-        if (pair_cond) {
-            ret.push_back(std::move(pair_cond->second));
-            r = pair_cond->first;
-            continue;
-        }
         auto res = parse_tree_node(r);
         auto pair = std::get_if<0>(&res);
         if (!pair) {
@@ -414,6 +407,19 @@ inline IResult<TreeDef> parse_condition_node(std::string_view i) {
             .children = std::move(r5->second),
         };
         children.push_back(std::move(true_br));
+    }
+    next = space(next).first;
+    if (next.substr(0, 4) == "else") {
+        auto res6 = tree_children_block(next.substr(4));
+        if (auto e = std::get_if<1>(&res6)) return *e;
+        auto r6 = std::get<0>(res6);
+        auto false_br = TreeDef {
+            .name = "Sequence",
+            .port_maps = PortMaps{},
+            .children = std::move(r6.second),
+        };
+        children.push_back(std::move(false_br));
+        next = r6.first;
     }
     return std::make_pair(next, TreeDef {
         .name = "if",
@@ -950,7 +956,11 @@ class IfNode : public BehaviorNode {
     std::optional<BehaviorResult> condition_result;
     BehaviorResult tick(Context& ctx) override {
         auto res = ctx.tick_child(0);
-        if (res == BehaviorResult::Fail) return BehaviorResult::Fail;
+        if (res == BehaviorResult::Fail) {
+            auto res2 = ctx.tick_child(2);
+            if (res2) return *res2;
+            return BehaviorResult::Fail;
+        }
         auto res2 = ctx.tick_child(1);
         if (res2) return *res2;
         return BehaviorResult::Fail;

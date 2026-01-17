@@ -78,7 +78,7 @@ void build_and_run(std::string_view src) {
     auto res = source_text(src);
 
     if (auto e = std::get_if<1>(&res)) {
-        std::cout << "Error: " << *e << "\n";
+        std::cout << "Parse Error: " << *e << "\n";
         return;
     }
 
@@ -288,6 +288,26 @@ void test_conditional_else_false() {
     build_and_run(src);
 }
 
+void test_var_decl() {
+    std::string src = R"(tree main = Sequence {
+    var baz
+    Print(input <- baz)
+}
+)";
+
+    build_and_run(src);
+}
+
+void test_var_def() {
+    std::string src = R"(tree main = Sequence {
+    var baz = true
+    Print(input <- baz)
+}
+)";
+
+    build_and_run(src);
+}
+
 void test_string_literal() {
     std::string src = R"(  "hey"   )";
     auto res = string_literal(src);
@@ -315,8 +335,10 @@ int main() {
     //test_repeat_fail();
     //test_retry();
     //test_retry_fail();
-    test_conditional_else_true();
-    test_conditional_else_false();
+    //test_conditional_else_true();
+    //test_conditional_else_false();
+    test_var_decl();
+    test_var_def();
     return 0;
 }
 

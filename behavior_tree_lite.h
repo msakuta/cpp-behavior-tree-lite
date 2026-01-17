@@ -48,10 +48,13 @@ struct PortMap {
 
 using PortMaps = std::vector<PortMap>;
 
+struct VarDef;
+
 struct TreeDef {
     std::string name;
     PortMaps port_maps;
     std::vector<TreeDef> children;
+    std::vector<VarDef> vars;
 };
 
 struct PortDef {
@@ -67,7 +70,7 @@ struct TreeRootDef {
 
 struct VarDef {
     std::string_view name;
-    std::string_view init;
+    std::optional<std::string_view> init;
 };
 
 struct VarAssign {
@@ -89,6 +92,16 @@ std::ostream &operator<<(std::ostream& os, indent_t) {
     for (size_t i = 0; i < indent_level; i++) {
         os << "  ";
     }
+    return os;
+}
+
+std::ostream &operator<<(std::ostream& os, const VarDef& var) {
+    os << indent << "VarDef {\n";
+    os << indent << "  .name = " << var.name << "\n";
+    if (var.init) {
+        os << indent << "  .init = " << *var.init << "\n";
+    }
+    os << indent << "}\n";
     return os;
 }
 
@@ -125,6 +138,13 @@ std::ostream &operator<<(std::ostream& os, const TreeDef& node) {
     indent_level++;
     for (auto& child : node.children) {
         os << child;
+    }
+    indent_level--;
+    os << indent << "]\n";
+    os << indent << ".vars = [\n";
+    indent_level++;
+    for (auto& var : node.vars) {
+        os << var;
     }
     indent_level--;
     os << indent << "]\n";
@@ -202,25 +222,26 @@ IResult<std::string_view> unmatch_char(std::string_view i) {
 }
 
 
-IResult<TreeDef> parse_tree_node(std::string_view i);
-IResult<TreeDef> parse_condition_node(std::string_view i);
+IResult<TreeElem> parse_tree_child(std::string_view i);
+IResult<TreeElem> parse_condition_node(std::string_view i);
+inline IResult<TreeElem> var_decl(std::string_view i);
 
-inline IResult<std::vector<TreeDef>> tree_children(std::string_view i) {
+inline IResult<std::vector<TreeElem>> tree_children(std::string_view i) {
     auto r = i;
-    std::vector<TreeDef> ret;
+    std::vector<TreeElem> ret;
     while (!r.empty()) {
-        auto res = parse_tree_node(r);
+        auto res = parse_tree_child(r);
         auto pair = std::get_if<0>(&res);
         if (!pair) {
             break;
         }
         ret.push_back(std::move(pair->second));
-        r = pair->first.substr(1);
+        r = pair->first;
     }
     return std::make_pair(r, ret);
 }
 
-inline IResult<std::vector<TreeDef>> tree_children_block(std::string_view i) {
+inline IResult<std::vector<TreeElem>> tree_children_block(std::string_view i) {
     i = space(i).first;
     auto res2 = match_char<'{'>(i);
     if (auto e = std::get_if<1>(&res2)) {
@@ -355,16 +376,32 @@ IResult<PortMaps> port_maps_parens(std::string_view i) {
     return std::make_pair(r4.first, port_maps);
 }
 
-IResult<TreeDef> parse_tree_node(std::string_view i) {
+inline TreeDef tree_def_from_elems(std::string name, PortMaps port_maps, std::vector<TreeElem> elems) {
+    std::vector<TreeDef> children;
+    std::vector<VarDef> vars;
+    for (auto& tree_elem : elems) {
+        if (auto tree_def = std::get_if<TreeDef>(&tree_elem)) {
+            children.push_back(std::move(*tree_def));
+        }
+        else if (auto var_def = std::get_if<VarDef>(&tree_elem)) {
+            vars.push_back(*var_def);
+        }
+    }
+    return TreeDef {
+        .name = name,
+        .port_maps = std::move(port_maps),
+        .children = std::move(children),
+        .vars = std::move(vars),
+    };
+}
+
+inline IResult<TreeDef> parse_tree_node(std::string_view i) {
     auto res = identifier(i);
     if (auto e = std::get_if<1>(&res)) {
         return std::string("Expected node name: " + *e);
     }
     auto r = std::get<0>(res);
-
-    if (r.second == "if") {
-        return parse_condition_node(r.first);
-    }
+    auto name = std::string(r.second);
 
     auto next = r.first;
     PortMaps port_maps;
@@ -375,19 +412,18 @@ IResult<TreeDef> parse_tree_node(std::string_view i) {
     }
 
     auto res2 = tree_children_block(next);
-    std::vector<TreeDef> children;
+    TreeDef ret; 
     if (auto r3 = std::get_if<0>(&res2)) {
         next = r3->first;
-        children = r3->second;
+        ret = tree_def_from_elems(name, std::move(port_maps), r3->second);
     }
-    return std::make_pair(next, TreeDef {
-        .name = std::string(r.second),
-        .port_maps = std::move(port_maps),
-        .children = std::move(children),
-    });
+    else {
+        ret = tree_def_from_elems(name, std::move(port_maps), {});
+    }
+    return std::make_pair(next, ret);
 }
 
-inline IResult<TreeDef> parse_condition_node(std::string_view i) {
+inline IResult<TreeElem> parse_condition_node(std::string_view i) {
     auto r2 = space(i).first;
     auto res2 = match_char<'('>(r2);
     if (auto e = std::get_if<1>(&res2)) return *e;
@@ -401,11 +437,7 @@ inline IResult<TreeDef> parse_condition_node(std::string_view i) {
     std::vector<TreeDef> children{condition};
     if (auto r5 = std::get_if<0>(&res5)) {
         next = r5->first;
-        auto true_br = TreeDef {
-            .name = "Sequence",
-            .port_maps = PortMaps{},
-            .children = std::move(r5->second),
-        };
+        auto true_br = tree_def_from_elems("Sequence", PortMaps{}, std::move(r5->second));
         children.push_back(std::move(true_br));
     }
     next = space(next).first;
@@ -413,11 +445,7 @@ inline IResult<TreeDef> parse_condition_node(std::string_view i) {
         auto res6 = tree_children_block(next.substr(4));
         if (auto e = std::get_if<1>(&res6)) return *e;
         auto r6 = std::get<0>(res6);
-        auto false_br = TreeDef {
-            .name = "Sequence",
-            .port_maps = PortMaps{},
-            .children = std::move(r6.second),
-        };
+        auto false_br = tree_def_from_elems("Sequence", PortMaps{}, std::move(r6.second));
         children.push_back(std::move(false_br));
         next = r6.first;
     }
@@ -425,6 +453,56 @@ inline IResult<TreeDef> parse_condition_node(std::string_view i) {
         .name = "if",
         .port_maps = PortMaps{},
         .children = std::move(children),
+        .vars = std::vector<VarDef>{},
+    });
+}
+
+inline IResult<TreeElem> parse_tree_child(std::string_view i) {
+    auto res = identifier(i);
+    if (auto e = std::get_if<1>(&res)) return *e;
+    auto r = std::get<0>(res);
+
+    if (r.second == "if") {
+        auto res = parse_condition_node(r.first);
+        if (auto e = std::get_if<1>(&res)) return *e;
+        auto r2 = std::get<0>(res);
+        return std::make_pair(r2.first, TreeElem{r2.second});
+    }
+
+    if (r.second == "var") {
+        return var_decl(r.first);
+    }
+
+    auto res2 = parse_tree_node(i);
+    if (auto e = std::get_if<1>(&res2)) return *e;
+    auto r2 = std::get<0>(res2);
+    return std::make_pair(r2.first, TreeElem{r2.second});
+}
+
+inline IResult<TreeElem> var_decl(std::string_view i) {
+    i = space(i).first;
+    auto res = identifier(i);
+    if (auto e = std::get_if<1>(&res)) return *e;
+    auto r2 = std::get<0>(res);
+    auto next = r2.first;
+    auto name = r2.second;
+    next = space(next).first;
+
+    std::optional<std::string_view> init;
+    if (next.substr(0, 1) == "=") {
+        auto init_res2 = identifier(next.substr(1));
+        if (auto e = std::get_if<1>(&init_res2)) return *e;
+        auto init_r = std::get<0>(init_res2);
+        if (init_r.second != "true" && init_r.second != "false") {
+            return std::string("true or false expected as the initializer");
+        }
+        init = init_r.second;
+        next = init_r.first;
+    }
+
+    return std::make_pair(next, VarDef {
+        .name = name,
+        .init = init,
     });
 }
 
@@ -552,7 +630,7 @@ IResult<Tree> parse_tree(std::string_view i) {
     // Skip the equal
     auto r4 = r3.substr(1);
 
-    auto res5 = parse_tree_node(r4);
+    auto res5 = parse_tree_child(r4);
     if (auto e = std::get_if<1>(&res5)) {
         return std::string("TreeDef parse error: " + *e);
     }
@@ -560,11 +638,16 @@ IResult<Tree> parse_tree(std::string_view i) {
     // Eat extra newlines after the last node
     auto r6 = empty_lines(r5.first);
 
-    return std::make_pair(r6.first, Tree{
-        .name = std::string(name_ok.second),
-        .node = r5.second,
-        .ports = port_defs,
-    });
+    if (auto t_def = std::get_if<TreeDef>(&r5.second)) {
+        return std::make_pair(r6.first, Tree{
+            .name = std::string(name_ok.second),
+            .node = std::move(*t_def),
+            .ports = port_defs,
+        });
+    }
+    else {
+        return std::string("Tree root cannot be a variable definition");
+    }
 }
 
 using TreeSource = std::vector<Tree>;

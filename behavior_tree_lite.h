@@ -376,6 +376,27 @@ IResult<PortMaps> port_maps_parens(std::string_view i) {
     return std::make_pair(r4.first, port_maps);
 }
 
+inline TreeDef tree_def_with_ports(std::string_view name, std::string init) {
+    PortMaps port_maps;
+    port_maps.push_back(PortMap {
+        .ty = PortType::Input,
+        .blackboard_literal = true,
+        .node_port = "value",
+        .blackboard_value = std::string(init),
+    });
+    port_maps.push_back(PortMap {
+        .ty = PortType::Output,
+        .blackboard_literal = false,
+        .node_port = "output",
+        .blackboard_value = std::make_pair(std::string(name), PortType::Output),
+    });
+    return TreeDef {
+        .name = "SetBool",
+        .port_maps = port_maps,
+        .children = std::vector<TreeDef>{},
+    };
+}
+
 inline TreeDef tree_def_from_elems(std::string name, PortMaps port_maps, std::vector<TreeElem> elems) {
     std::vector<TreeDef> children;
     std::vector<VarDef> vars;
@@ -384,7 +405,10 @@ inline TreeDef tree_def_from_elems(std::string name, PortMaps port_maps, std::ve
             children.push_back(std::move(*tree_def));
         }
         else if (auto var_def = std::get_if<VarDef>(&tree_elem)) {
-            vars.push_back(*var_def);
+            if (var_def->init) {
+                children.push_back(tree_def_with_ports(var_def->name, std::string(*var_def->init)));
+            }
+            vars.push_back(std::move(*var_def));
         }
     }
     return TreeDef {
@@ -1024,9 +1048,9 @@ class FalseNode : public BehaviorNode {
     }
 };
 
-class SetValueNode : public BehaviorNode {
+class SetBoolNode : public BehaviorNode {
     BehaviorResult tick(Context& context) override {
-        auto var_it = context.get("input");
+        auto var_it = context.get("value");
         if (var_it) {
             context.set("output", *var_it);
         }
@@ -1144,8 +1168,8 @@ Registry defaultRegistry() {
         std::function([](){ return std::make_unique<TrueNode>(); }));
     registry.node_types.emplace(std::string("false"),
         std::function([](){ return std::make_unique<FalseNode>(); }));
-    registry.node_types.emplace(std::string("SetValue"),
-        std::function([](){ return std::make_unique<SetValueNode>(); }));
+    registry.node_types.emplace(std::string("SetBool"),
+        std::function([](){ return std::make_unique<SetBoolNode>(); }));
     registry.node_types.emplace(std::string("if"),
         std::function([](){ return std::make_unique<IfNode>(); }));
 

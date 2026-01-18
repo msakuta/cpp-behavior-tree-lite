@@ -43,7 +43,7 @@ struct PortMap {
     /// Whether blackboard_variable is a literal instead of a variable name
     bool blackboard_literal;
     std::string node_port;
-    BlackboardValue blackboard_value;
+    std::string value;
 };
 
 using PortMaps = std::vector<PortMap>;
@@ -124,11 +124,11 @@ std::ostream &operator<<(std::ostream& os, const TreeDef& node) {
                 os << " <-> ";
                 break;
         }
-        if (auto literal = std::get_if<1>(&port_map.blackboard_value)) {
-            os << '"' << *literal << "\"\n";
+        if (port_map.blackboard_literal) {
+            os << '"' << port_map.value << "\"\n";
         }
-        else if (auto port = std::get_if<0>(&port_map.blackboard_value)) {
-            os << port->first << "\n";
+        else {
+            os << port_map.value << "\n";
         }
     }
     indent_level--;
@@ -308,12 +308,12 @@ IResult<PortMap> port_map(std::string_view i) {
     }
 
     bool blackboard_literal = false;
-    BlackboardValue blackboard_value;
+    std::string value;
     auto res2 = string_literal(next);
     if (auto pair2 = std::get_if<0>(&res2)) {
         next = pair2->first;
         blackboard_literal = true;
-        blackboard_value = std::string(pair2->second);
+        value = std::string(pair2->second);
     }
     else {
         auto res2 = identifier(next);
@@ -322,14 +322,14 @@ IResult<PortMap> port_map(std::string_view i) {
         }
         auto pair3 = std::get<0>(res2);
         next = pair3.first;
-        blackboard_value = std::make_pair(std::string(pair3.second), ty);
+        value = pair3.second;
     }
 
     PortMap port_map {
         .ty = ty,
         .blackboard_literal = blackboard_literal,
         .node_port = std::string(pair.second),
-        .blackboard_value = blackboard_value,
+        .value = value,
     };
 
     return std::make_pair(next, port_map);
@@ -382,13 +382,13 @@ inline TreeDef tree_def_with_ports(std::string_view name, std::string init) {
         .ty = PortType::Input,
         .blackboard_literal = true,
         .node_port = "value",
-        .blackboard_value = std::string(init),
+        .value = std::string(init),
     });
     port_maps.push_back(PortMap {
         .ty = PortType::Output,
         .blackboard_literal = false,
         .node_port = "output",
-        .blackboard_value = std::make_pair(std::string(name), PortType::Output),
+        .value = std::string(name),
     });
     return TreeDef {
         .name = "SetBool",
@@ -1214,7 +1214,12 @@ BehaviorNodeContainer load_recurse(
 
     BBMap bbmap;
     for (auto& port_map : parent.port_maps) {
-        bbmap.emplace(port_map.node_port, port_map.blackboard_value);
+        if (port_map.blackboard_literal) {
+            bbmap.emplace(port_map.node_port, port_map.value);
+        }
+        else {
+            bbmap.emplace(port_map.node_port, std::make_pair(port_map.value, port_map.ty));
+        }
     }
 
     return BehaviorNodeContainer(
